@@ -1,0 +1,44 @@
+[Unit]
+Description=Server Info agent
+Documentation=https://github.com/merlinstoll/server-info
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=serverinfo
+Group=serverinfo
+ExecStart=/usr/local/bin/serverinfo-agent run --config /etc/serverinfo-agent/config.toml
+Restart=on-failure
+RestartSec=3
+
+# --- hardening ---
+# NoNewPrivileges staat bewust UIT. NVMe-SMART vereist CAP_SYS_ADMIN via
+# NVME_IOCTL_ADMIN_CMD; het alternatief was de agent zelf CAP_SYS_ADMIN geven,
+# en dat is vrijwel root voor het hele proces. Nu kan de agent via sudo precies
+# één commando met vastgepinde argumenten draaien (/etc/sudoers.d/serverinfo-agent)
+# en verder niets. Dat is de smalste van de twee.
+NoNewPrivileges=no
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# /etc mag beschrijfbaar zijn voor precies één doel: het servercertificaat
+# vernieuwen voordat het na 397 dagen verloopt. De rest van het systeem blijft
+# read-only dankzij ProtectSystem=strict.
+ReadWritePaths=/var/lib/serverinfo-agent /etc/serverinfo-agent
+SupplementaryGroups=systemd-journal disk
+MemoryMax=128M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

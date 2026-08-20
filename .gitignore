@@ -1,0 +1,17 @@
+# Build-output
+agent/dist/
+ios/build/
+ios/DerivedData/
+*.xcuserdatad
+xcuserdata/
+
+# Door xcodegen gegenereerd uit project.yml
+ios/ServerInfo.xcodeproj/
+
+# macOS
+.DS_Store
+
+# Nooit committen: sleutelmateriaal
+*.pem
+*.key
+*.p12

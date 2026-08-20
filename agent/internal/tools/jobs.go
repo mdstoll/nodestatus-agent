@@ -1,0 +1,498 @@
+package tools
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+type JobState string
+
+const (
+	JobQueued  JobState = "queued"
+	JobRunning JobState = "running"
+	JobDone    JobState = "done"
+	JobFailed  JobState = "failed"
+)
+
+type Job struct {
+	ID        string   `json:"job_id"`
+	Type      string   `json:"type"`
+	State     JobState `json:"state"`
+	Phase     string   `json:"phase,omitempty"`
+	Progress  float64  `json:"progress"`
+	StartedAt float64  `json:"started_at"`
+	EndedAt   float64  `json:"ended_at,omitempty"`
+	Result    any      `json:"result,omitempty"`
+	Error     string   `json:"error,omitempty"`
+
+	cancel context.CancelFunc
+}
+
+type JobRequest struct {
+	Type    string `json:"type"`
+	Target  string `json:"target"`
+	Count   int    `json:"count"`
+	Record  string `json:"record"`
+	Server  string `json:"server"`
+	MaxHops int    `json:"max_hops"`
+}
+
+type Runner struct {
+	mu      sync.Mutex
+	jobs    map[string]*Job
+	running int
+	lastRun map[string]time.Time
+	maxPar  int
+}
+
+func NewRunner() *Runner {
+	r := &Runner{jobs: map[string]*Job{}, lastRun: map[string]time.Time{}, maxPar: 2}
+	go r.gc()
+	return r
+}
+
+func (r *Runner) gc() {
+	for range time.Tick(time.Minute) {
+		r.mu.Lock()
+		for id, j := range r.jobs {
+			if j.EndedAt > 0 && time.Since(time.Unix(int64(j.EndedAt), 0)) > 5*time.Minute {
+				delete(r.jobs, id)
+			}
+		}
+		r.mu.Unlock()
+	}
+}
+
+func (r *Runner) Get(id string) (*Job, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	j, ok := r.jobs[id]
+	if !ok {
+		return nil, false
+	}
+	c := *j
+	return &c, true
+}
+
+// Submit start een job. Speedtest heeft een eigen limiet van 1 per 5 minuten
+// omdat elke run 1-3 GB verkeer kost.
+func (r *Runner) Submit(req JobRequest) (*Job, error) {
+	r.mu.Lock()
+	if r.running >= r.maxPar {
+		r.mu.Unlock()
+		return nil, fmt.Errorf("er lopen al %d taken; probeer het zo opnieuw", r.maxPar)
+	}
+	if req.Type == "speedtest" {
+		if last, ok := r.lastRun["speedtest"]; ok && time.Since(last) < 5*time.Minute {
+			wait := (5*time.Minute - time.Since(last)).Round(time.Second)
+			r.mu.Unlock()
+			return nil, fmt.Errorf("speedtest is begrensd op 1 per 5 minuten; nog %s wachten", wait)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), jobTimeout(req.Type))
+	j := &Job{
+		ID: "j_" + randID(), Type: req.Type, State: JobQueued,
+		StartedAt: float64(time.Now().Unix()), cancel: cancel,
+	}
+	r.jobs[j.ID] = j
+	r.running++
+	r.lastRun[req.Type] = time.Now()
+	r.mu.Unlock()
+
+	go func() {
+		defer cancel()
+		r.update(j.ID, func(x *Job) { x.State = JobRunning })
+		res, err := r.execute(ctx, req, j.ID)
+		r.mu.Lock()
+		r.running--
+		if x, ok := r.jobs[j.ID]; ok {
+			x.EndedAt = float64(time.Now().Unix())
+			if err != nil {
+				x.State, x.Error = JobFailed, err.Error()
+			} else {
+				x.State, x.Result, x.Progress = JobDone, res, 1
+			}
+		}
+		r.mu.Unlock()
+	}()
+	return j, nil
+}
+
+func (r *Runner) update(id string, f func(*Job)) {
+	r.mu.Lock()
+	if j, ok := r.jobs[id]; ok {
+		f(j)
+	}
+	r.mu.Unlock()
+}
+
+func jobTimeout(t string) time.Duration {
+	switch t {
+	case "speedtest":
+		return 120 * time.Second
+	case "ping":
+		return 60 * time.Second
+	case "traceroute":
+		return 60 * time.Second
+	}
+	return 20 * time.Second
+}
+
+func (r *Runner) execute(ctx context.Context, req JobRequest, id string) (any, error) {
+	switch req.Type {
+	case "speedtest":
+		return r.speedtest(ctx, id)
+	case "ping":
+		return pingJob(ctx, req)
+	case "dns":
+		return dnsJob(ctx, req)
+	case "whois":
+		return whoisJob(ctx, req)
+	case "traceroute":
+		return tracerouteJob(ctx, req)
+	}
+	return nil, fmt.Errorf("onbekend taaktype %q", req.Type)
+}
+
+// ---------- speedtest ----------
+
+type SpeedtestResult struct {
+	DownloadBps float64 `json:"download_bps"`
+	UploadBps   float64 `json:"upload_bps"`
+	PingMs      float64 `json:"ping_ms"`
+	JitterMs    float64 `json:"jitter_ms"`
+	PacketLoss  float64 `json:"packet_loss"`
+	ServerName  string  `json:"server_name"`
+	ServerCity  string  `json:"server_city,omitempty"`
+	ISP         string  `json:"isp,omitempty"`
+	ExternalIP  string  `json:"external_ip_masked,omitempty"`
+	ResultURL   string  `json:"result_url,omitempty"`
+	Engine      string  `json:"engine"`
+}
+
+func (r *Runner) speedtest(ctx context.Context, id string) (any, error) {
+	r.update(id, func(j *Job) { j.Phase = "verbinden"; j.Progress = 0.1 })
+	if Has("speedtest") {
+		b, err := Run(ctx, "speedtest", "-f", "json", "--accept-license", "--accept-gdpr")
+		if err != nil {
+			return nil, err
+		}
+		var o struct {
+			Ping struct {
+				Latency float64 `json:"latency"`
+				Jitter  float64 `json:"jitter"`
+			} `json:"ping"`
+			Download struct {
+				Bandwidth float64 `json:"bandwidth"`
+			} `json:"download"`
+			Upload struct {
+				Bandwidth float64 `json:"bandwidth"`
+			} `json:"upload"`
+			PacketLoss float64 `json:"packetLoss"`
+			Server     struct {
+				Name     string `json:"name"`
+				Location string `json:"location"`
+			} `json:"server"`
+			ISP       string `json:"isp"`
+			Interface struct {
+				ExternalIP string `json:"externalIp"`
+			} `json:"interface"`
+			Result struct {
+				URL string `json:"url"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(b, &o); err != nil {
+			return nil, fmt.Errorf("speedtest-output onleesbaar")
+		}
+		return SpeedtestResult{
+			DownloadBps: o.Download.Bandwidth * 8, UploadBps: o.Upload.Bandwidth * 8,
+			PingMs: o.Ping.Latency, JitterMs: o.Ping.Jitter, PacketLoss: o.PacketLoss,
+			ServerName: o.Server.Name, ServerCity: o.Server.Location, ISP: o.ISP,
+			ExternalIP: maskIP(o.Interface.ExternalIP), ResultURL: o.Result.URL, Engine: "ookla",
+		}, nil
+	}
+	if Has("librespeed-cli") {
+		b, err := Run(ctx, "librespeed-cli", "--json")
+		if err != nil {
+			return nil, err
+		}
+		var arr []struct {
+			Ping     float64 `json:"ping"`
+			Jitter   float64 `json:"jitter"`
+			Download float64 `json:"download"`
+			Upload   float64 `json:"upload"`
+			Server   struct {
+				Name string `json:"name"`
+			} `json:"server"`
+		}
+		if err := json.Unmarshal(b, &arr); err != nil || len(arr) == 0 {
+			return nil, fmt.Errorf("librespeed-output onleesbaar")
+		}
+		o := arr[0]
+		return SpeedtestResult{
+			DownloadBps: o.Download * 1e6, UploadBps: o.Upload * 1e6,
+			PingMs: o.Ping, JitterMs: o.Jitter, ServerName: o.Server.Name, Engine: "librespeed",
+		}, nil
+	}
+	return nil, fmt.Errorf("geen speedtest-tool geïnstalleerd (installeer 'speedtest' of 'librespeed-cli')")
+}
+
+func maskIP(ip string) string {
+	p := strings.Split(ip, ".")
+	if len(p) == 4 {
+		return p[0] + "." + p[1] + ".x.x"
+	}
+	return ""
+}
+
+// ---------- ping ----------
+
+type PingResult struct {
+	Target     string    `json:"target"`
+	ResolvedIP string    `json:"resolved_ip,omitempty"`
+	Sent       int       `json:"sent"`
+	Received   int       `json:"received"`
+	LossPct    float64   `json:"loss_percent"`
+	MinMs      float64   `json:"min_ms"`
+	AvgMs      float64   `json:"avg_ms"`
+	MaxMs      float64   `json:"max_ms"`
+	MdevMs     float64   `json:"mdev_ms"`
+	RTTs       []float64 `json:"rtts_ms"`
+}
+
+var (
+	pingLineRe = regexp.MustCompile(`time=([\d.]+)\s*ms`)
+	pingIPRe   = regexp.MustCompile(`PING\s+\S+\s+\(([\d.a-fA-F:]+)\)`)
+	pingStatRe = regexp.MustCompile(`(\d+) packets transmitted, (\d+) received`)
+	pingRTTRe  = regexp.MustCompile(`= ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+) ms`)
+)
+
+func pingJob(ctx context.Context, req JobRequest) (any, error) {
+	target, err := ValidTarget(req.Target)
+	if err != nil {
+		return nil, err
+	}
+	count := ClampInt(req.Count, 1, 20, 10)
+	b, err := Run(ctx, "ping", "-c", strconv.Itoa(count), "-W", "2", "-i", "0.3", target)
+	if err != nil && len(b) == 0 {
+		return nil, err
+	}
+	out := string(b)
+	res := PingResult{Target: target, Sent: count, RTTs: []float64{}}
+	if m := pingIPRe.FindStringSubmatch(out); m != nil {
+		res.ResolvedIP = m[1]
+	}
+	for _, m := range pingLineRe.FindAllStringSubmatch(out, -1) {
+		v, _ := strconv.ParseFloat(m[1], 64)
+		res.RTTs = append(res.RTTs, v)
+	}
+	if m := pingStatRe.FindStringSubmatch(out); m != nil {
+		res.Sent, _ = strconv.Atoi(m[1])
+		res.Received, _ = strconv.Atoi(m[2])
+	}
+	if res.Sent > 0 {
+		res.LossPct = float64(res.Sent-res.Received) / float64(res.Sent) * 100
+	}
+	if m := pingRTTRe.FindStringSubmatch(out); m != nil {
+		res.MinMs, _ = strconv.ParseFloat(m[1], 64)
+		res.AvgMs, _ = strconv.ParseFloat(m[2], 64)
+		res.MaxMs, _ = strconv.ParseFloat(m[3], 64)
+		res.MdevMs, _ = strconv.ParseFloat(m[4], 64)
+	}
+	if res.Received == 0 {
+		return res, fmt.Errorf("geen antwoord van %s", target)
+	}
+	return res, nil
+}
+
+// ---------- dns ----------
+
+type DNSAnswer struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	TTL   int    `json:"ttl"`
+	Value string `json:"value"`
+}
+
+type DNSResult struct {
+	Query   string      `json:"query"`
+	Record  string      `json:"record"`
+	Server  string      `json:"server"`
+	Answers []DNSAnswer `json:"answers"`
+	QueryMs float64     `json:"query_ms"`
+}
+
+func dnsJob(ctx context.Context, req JobRequest) (any, error) {
+	target, err := ValidTarget(req.Target)
+	if err != nil {
+		return nil, err
+	}
+	rec, err := ValidRecordType(req.Record)
+	if err != nil {
+		return nil, err
+	}
+	args := []string{target, rec, "+noall", "+answer", "+stats", "+timeout=3", "+tries=1"}
+	server := "systeem"
+	if req.Server != "" {
+		s, err := ValidTarget(req.Server)
+		if err != nil {
+			return nil, fmt.Errorf("ongeldige DNS-server")
+		}
+		args = append([]string{"@" + s}, args...)
+		server = s
+	}
+	b, err := Run(ctx, "dig", args...)
+	if err != nil {
+		return nil, err
+	}
+	res := DNSResult{Query: target, Record: rec, Server: server, Answers: []DNSAnswer{}}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, ";") {
+			if strings.HasPrefix(line, ";; Query time:") {
+				f := strings.Fields(line)
+				if len(f) >= 4 {
+					v, _ := strconv.ParseFloat(f[3], 64)
+					res.QueryMs = v
+				}
+			}
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) < 5 {
+			continue
+		}
+		ttl, _ := strconv.Atoi(f[1])
+		res.Answers = append(res.Answers, DNSAnswer{
+			Name: strings.TrimSuffix(f[0], "."), Type: f[3], TTL: ttl,
+			Value: strings.Join(f[4:], " "),
+		})
+	}
+	return res, nil
+}
+
+// ---------- whois ----------
+
+type WhoisResult struct {
+	Query       string   `json:"query"`
+	Registrar   string   `json:"registrar,omitempty"`
+	Created     string   `json:"created,omitempty"`
+	Expires     string   `json:"expires,omitempty"`
+	Updated     string   `json:"updated,omitempty"`
+	NameServers []string `json:"name_servers"`
+	Status      []string `json:"status"`
+	Raw         string   `json:"raw"`
+}
+
+func whoisJob(ctx context.Context, req JobRequest) (any, error) {
+	target, err := ValidTarget(req.Target)
+	if err != nil {
+		return nil, err
+	}
+	b, err := Run(ctx, "whois", "--", target)
+	if err != nil {
+		return nil, err
+	}
+	raw := string(b)
+	if len(raw) > 60000 {
+		raw = raw[:60000] + "\n… (afgekapt)"
+	}
+	res := WhoisResult{Query: target, Raw: raw, NameServers: []string{}, Status: []string{}}
+	for _, line := range strings.Split(raw, "\n") {
+		k, v, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		k, v = strings.ToLower(strings.TrimSpace(k)), strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		switch k {
+		case "registrar", "registrar name", "sponsoring registrar":
+			if res.Registrar == "" {
+				res.Registrar = v
+			}
+		case "creation date", "created", "registered on", "domain registration date":
+			if res.Created == "" {
+				res.Created = v
+			}
+		case "registry expiry date", "expiry date", "expires", "paid-till":
+			if res.Expires == "" {
+				res.Expires = v
+			}
+		case "updated date", "last modified", "changed":
+			if res.Updated == "" {
+				res.Updated = v
+			}
+		case "name server", "nserver", "nameserver":
+			res.NameServers = append(res.NameServers, strings.Fields(v)[0])
+		case "domain status", "status":
+			res.Status = append(res.Status, v)
+		}
+	}
+	return res, nil
+}
+
+// ---------- traceroute ----------
+
+type Hop struct {
+	Number int       `json:"number"`
+	Host   string    `json:"host"`
+	IP     string    `json:"ip,omitempty"`
+	RTTs   []float64 `json:"rtts_ms"`
+}
+
+type TracerouteResult struct {
+	Target string `json:"target"`
+	Hops   []Hop  `json:"hops"`
+}
+
+func tracerouteJob(ctx context.Context, req JobRequest) (any, error) {
+	target, err := ValidTarget(req.Target)
+	if err != nil {
+		return nil, err
+	}
+	hops := ClampInt(req.MaxHops, 1, 30, 20)
+	b, err := Run(ctx, "traceroute", "-n", "-w", "2", "-q", "3", "-m", strconv.Itoa(hops), target)
+	if err != nil && len(b) == 0 {
+		return nil, err
+	}
+	res := TracerouteResult{Target: target, Hops: []Hop{}}
+	for _, line := range strings.Split(string(b), "\n")[1:] {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		n, err := strconv.Atoi(f[0])
+		if err != nil {
+			continue
+		}
+		h := Hop{Number: n, RTTs: []float64{}}
+		if f[1] != "*" {
+			h.Host, h.IP = f[1], f[1]
+		} else {
+			h.Host = "*"
+		}
+		for i := 2; i < len(f); i++ {
+			if v, err := strconv.ParseFloat(f[i], 64); err == nil {
+				h.RTTs = append(h.RTTs, v)
+			}
+		}
+		res.Hops = append(res.Hops, h)
+	}
+	return res, nil
+}
+
+func randID() string {
+	b := make([]byte, 3)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
