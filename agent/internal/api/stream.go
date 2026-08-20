@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"nodestatus/internal/pki"
 )
 
 // handleStream levert de 1 Hz SSE-stream. Eerst optioneel backfill uit de
@@ -43,12 +45,35 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
 
+	// Wie deze stream opende. Een SSE-verbinding is één langlopend request,
+	// dus de autorisatie van bij het openen zou blijven gelden: intrekken had
+	// pas effect als de app zelf opnieuw verbond. Daarom hier per sample
+	// opnieuw kijken of het apparaat nog op de allowlist staat — dat is een
+	// map-lookup en kost niets.
+	var fp string
+	if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+		fp = pki.CertFingerprint(r.TLS.PeerCertificates[0])
+	}
+	stillAllowed := func() bool {
+		if fp == "" {
+			return s.clientIP(r).IsLoopback()
+		}
+		_, ok := s.store.Lookup(fp)
+		return ok
+	}
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case smp, ok := <-ch:
 			if !ok {
+				return
+			}
+			if !stillAllowed() {
+				s.log.Info("stream closed, device revoked")
+				fmt.Fprint(w, "event: revoked\ndata: {}\n\n")
+				flusher.Flush()
 				return
 			}
 			b, err := json.Marshal(smp)
@@ -58,6 +83,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "event: sample\nid: %d\ndata: %s\n\n", int64(smp.T), b)
 			flusher.Flush()
 		case <-keepalive.C:
+			if !stillAllowed() {
+				return
+			}
 			fmt.Fprint(w, ": keep-alive\n\n")
 			flusher.Flush()
 		}
