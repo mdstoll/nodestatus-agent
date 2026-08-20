@@ -92,7 +92,7 @@ func (s *Server) handle(c net.Conn) {
 	}
 	var req Request
 	if json.Unmarshal(line, &req) != nil {
-		writeResp(c, Response{Message: "onleesbaar verzoek"})
+		writeResp(c, Response{Message: "unreadable request"})
 		return
 	}
 	switch req.Cmd {
@@ -123,7 +123,7 @@ func (s *Server) handle(c net.Conn) {
 			"fingerprint":     s.ca.Fingerprint(),
 		}})
 	default:
-		writeResp(c, Response{Message: "onbekend commando"})
+		writeResp(c, Response{Message: "unknown command"})
 	}
 }
 
@@ -170,15 +170,15 @@ func isVirtual(n string) bool {
 func unreachable(stateDir string, cause error) error {
 	sock := SocketPath(stateDir)
 	if _, statErr := os.Stat(sock); statErr != nil {
-		return fmt.Errorf("de agent draait niet — start hem met:\n"+
+		return fmt.Errorf("the agent is not running — start it with:\n"+
 			"    sudo systemctl start nodestatus-agent\n"+
-			"  en controleer daarna:\n"+
+			"  then check:\n"+
 			"    systemctl status nodestatus-agent\n"+
-			"  (socket %s bestaat niet)", sock)
+			"  (socket %s does not exist)", sock)
 	}
-	return fmt.Errorf("de agent luistert niet op zijn controlesocket.\n"+
-		"  Meestal komt dat doordat er een tweede agent is gestart die de socket\n"+
-		"  heeft overgenomen en daarna is gestopt. Een herstart lost het op:\n"+
+	return fmt.Errorf("the agent is not listening on its control socket.\n"+
+		"  Usually a second agent was started, took the socket over and then\n"+
+		"  exited. A restart fixes it:\n"+
 		"    sudo systemctl restart nodestatus-agent\n"+
 		"  Details: %v", cause)
 }

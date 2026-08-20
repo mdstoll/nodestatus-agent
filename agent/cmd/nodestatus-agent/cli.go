@@ -24,9 +24,9 @@ func stateDir() string {
 
 func cmdEnroll() {
 	fs := flag.NewFlagSet("enroll", flag.ExitOnError)
-	newWin := fs.Bool("new", false, "open een nieuw koppelvenster")
-	cancel := fs.Bool("cancel", false, "sluit het koppelvenster")
-	port := fs.Int("port", 0, "poort om in de QR te zetten (standaard uit config)")
+	newWin := fs.Bool("new", false, "open a new pairing window")
+	cancel := fs.Bool("cancel", false, "close the pairing window")
+	port := fs.Int("port", 0, "port to embed in the QR code (default: from config)")
 	fs.Parse(os.Args[1:])
 
 	if *cancel {
@@ -73,24 +73,24 @@ func printPairing(info control.EnrollInfo, host string, port int) {
 
 	expires := time.Unix(info.ExpiresAt, 0).Format("15:04")
 	fmt.Println()
-	fmt.Printf("  \033[1mKoppel dit apparaat\033[0m\n\n")
+	fmt.Printf("  \033[1mPair this device\033[0m\n\n")
 	fmt.Printf("    Host         %s:%d\n", host, port)
 	if len(info.Addresses) > 1 {
-		fmt.Printf("    Ook via      %s\n", strings.Join(info.Addresses[1:], ", "))
+		fmt.Printf("    Also at      %s\n", strings.Join(info.Addresses[1:], ", "))
 	}
-	fmt.Printf("    Koppelcode   \033[1;36m%s-%s\033[0m   (geldig tot %s)\n",
+	fmt.Printf("    Pairing code \033[1;36m%s-%s\033[0m   (valid until %s)\n",
 		info.Code[:4], info.Code[4:], expires)
 	fmt.Printf("    Fingerprint  %s…%s\n\n", info.Fingerprint[:8], info.Fingerprint[len(info.Fingerprint)-8:])
 
 	if _, err := exec.LookPath("qrencode"); err == nil {
-		fmt.Println("    Scan deze QR in de Node Status app:")
+		fmt.Println("    Scan this QR code in the Node Status app:")
 		fmt.Println()
 		cmd := exec.Command("qrencode", "-t", "UTF8", "-m", "4", url)
 		cmd.Stdout = os.Stdout
 		_ = cmd.Run()
 	} else {
-		fmt.Println("    (installeer 'qrencode' voor een scanbare QR-code)")
-		fmt.Println("    Koppel-URL:")
+		fmt.Println("    (install 'qrencode' for a scannable QR code)")
+		fmt.Println("    Pairing URL:")
 		fmt.Println("   ", url)
 	}
 	fmt.Println()
@@ -98,7 +98,7 @@ func printPairing(info control.EnrollInfo, host string, port int) {
 
 func cmdDevices() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "gebruik: nodestatus-agent devices list|revoke <id>")
+		fmt.Fprintln(os.Stderr, "usage: nodestatus-agent devices list|revoke <id>")
 		os.Exit(2)
 	}
 	sub := os.Args[1]
@@ -116,11 +116,11 @@ func cmdDevices() {
 		b, _ := json.Marshal(resp.Data)
 		_ = json.Unmarshal(b, &devs)
 		if len(devs) == 0 {
-			fmt.Println("Geen gekoppelde apparaten. Open een venster met:")
+			fmt.Println("No paired devices. Open a pairing window with:")
 			fmt.Println("  sudo nodestatus-agent enroll --new")
 			return
 		}
-		fmt.Printf("%-10s %-24s %-12s %-16s %s\n", "ID", "NAAM", "GEKOPPELD", "LAATST GEZIEN", "VERLOOPT")
+		fmt.Printf("%-10s %-24s %-12s %-16s %s\n", "ID", "NAME", "PAIRED", "LAST SEEN", "EXPIRES")
 		for _, d := range devs {
 			fmt.Printf("%-10s %-24s %-12s %-16s %s\n",
 				d.ID, truncate(d.Name, 24), d.EnrolledAt.Format("2006-01-02"),
@@ -137,9 +137,9 @@ func cmdDevices() {
 			fmt.Fprintln(os.Stderr, "✖", resp.Message)
 			os.Exit(1)
 		}
-		fmt.Printf("✔ %s ingetrokken. Bestaande verbindingen zijn verbroken.\n", resp.Message)
+		fmt.Printf("✔ %s revoked. Existing connections were closed.\n", resp.Message)
 	default:
-		fmt.Fprintln(os.Stderr, "onbekend subcommando", sub)
+		fmt.Fprintln(os.Stderr, "unknown subcommand", sub)
 		os.Exit(2)
 	}
 }
@@ -148,13 +148,13 @@ func humanAgo(t time.Time) string {
 	d := time.Since(t)
 	switch {
 	case d < time.Minute:
-		return "zojuist"
+		return "just now"
 	case d < time.Hour:
-		return fmt.Sprintf("%d min geleden", int(d.Minutes()))
+		return fmt.Sprintf("%d min ago", int(d.Minutes()))
 	case d < 24*time.Hour:
-		return fmt.Sprintf("%d uur geleden", int(d.Hours()))
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
 	}
-	return fmt.Sprintf("%d dagen geleden", int(d.Hours()/24))
+	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 }
 
 func truncate(s string, n int) string {
@@ -176,8 +176,8 @@ func check(err error) {
 // schrijven en ProtectSystem=strict kan blijven staan.
 func cmdBootstrap() {
 	fs := flag.NewFlagSet("bootstrap", flag.ExitOnError)
-	cfgPath := fs.String("config", defaultConfigPath(), "pad naar config.toml")
-	force := fs.Bool("force", false, "vernieuw het servercertificaat ook als het nog geldig is")
+	cfgPath := fs.String("config", defaultConfigPath(), "path to config.toml")
+	force := fs.Bool("force", false, "renew the server certificate even if it is still valid")
 	fs.Parse(os.Args[1:])
 
 	cfg, err := config.Load(*cfgPath)

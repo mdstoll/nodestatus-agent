@@ -57,7 +57,7 @@ func New(dir string, maxAttempts int) (*Store, error) {
 	if b, err := os.ReadFile(s.path); err == nil {
 		var list []*Device
 		if err := json.Unmarshal(b, &list); err != nil {
-			return nil, fmt.Errorf("devices.json onleesbaar: %w", err)
+			return nil, fmt.Errorf("devices.json unreadable: %w", err)
 		}
 		for _, d := range list {
 			s.devices[d.Fingerprint] = d
@@ -156,7 +156,7 @@ func (s *Store) Replace(oldFP, newFP string, expires time.Time) (*Device, error)
 	defer s.mu.Unlock()
 	d, ok := s.devices[oldFP]
 	if !ok {
-		return nil, fmt.Errorf("onbekend apparaat")
+		return nil, fmt.Errorf("unknown device")
 	}
 	delete(s.devices, oldFP)
 	d.Fingerprint = newFP
@@ -175,7 +175,7 @@ func (s *Store) Revoke(id string) (string, error) {
 			return name, s.save()
 		}
 	}
-	return "", fmt.Errorf("apparaat %q niet gevonden", id)
+	return "", fmt.Errorf("device %q not found", id)
 }
 
 // ---- enrollment-venster ----
