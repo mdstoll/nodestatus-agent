@@ -73,17 +73,21 @@ esac
 ok "preflight ($ARCH, $(. /etc/os-release && echo "$PRETTY_NAME"))"
 
 # ---------- 2. locate or download the binary ----------
-# Piped from curl there is no script file, so BASH_SOURCE is unset. Guard it,
-# otherwise `set -u` aborts before we get to the download path.
-SRC_DIR="/tmp"
+# Only look for files next to the script when there *is* a script. Piped from
+# curl, BASH_SOURCE is unset; falling back to a directory like /tmp would let
+# the installer pick up unrelated leftovers, which is exactly what happened.
+SRC_DIR=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
   SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 SRC_BIN=""
-for cand in "$SRC_DIR/nodestatus-agent" "$SRC_DIR/$ARCH/nodestatus-agent"; do
-  [ -f "$cand" ] && SRC_BIN="$cand" && break
-done
-UNIT_SRC="$SRC_DIR/nodestatus-agent.service"
+UNIT_SRC=""
+if [ -n "$SRC_DIR" ]; then
+  for cand in "$SRC_DIR/nodestatus-agent" "$SRC_DIR/$ARCH/nodestatus-agent"; do
+    [ -f "$cand" ] && SRC_BIN="$cand" && break
+  done
+  [ -n "$SRC_BIN" ] && UNIT_SRC="$(dirname "$SRC_BIN")/nodestatus-agent.service"
+fi
 
 if [ -z "$SRC_BIN" ]; then
   # Piped straight from curl: fetch the release ourselves.
