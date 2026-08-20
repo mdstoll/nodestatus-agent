@@ -370,11 +370,7 @@ func Sensors() SensorsResult {
 					Critical: sane(sp.typ, readFloatDiv(base+"_crit", sp.div)),
 					Status:   "ok",
 				}
-				if s.Critical > 0 && s.Value >= s.Critical {
-					s.Status = "crit"
-				} else if s.High > 0 && s.Value >= s.High {
-					s.Status = "warn"
-				}
+				s.Status = sensorStatus(sp.typ, s.Value, s.High, s.Critical)
 				chip.Sensors = append(chip.Sensors, s)
 				res.Available++
 			}
@@ -384,6 +380,32 @@ func Sensors() SensorsResult {
 		}
 	}
 	return res
+}
+
+// sensorStatus gebruikt dezelfde drempels als de live metrics. Stond dit op
+// twee plekken, dan toonde hetzelfde sensorpunt op het ene scherm oranje en
+// op het andere groen — precies wat er gebeurde bij een NVMe op 85 °C.
+func sensorStatus(typ string, value, high, critical float64) string {
+	if typ != "temperature" {
+		switch {
+		case critical > 0 && value >= critical:
+			return "crit"
+		case high > 0 && value >= high:
+			return "warn"
+		}
+		return "ok"
+	}
+	switch {
+	case critical > 0 && value >= critical:
+		return "crit"
+	case critical > 0 && value >= critical*0.85:
+		return "warn"
+	case high > 0 && value >= high*0.9:
+		return "warn"
+	case critical == 0 && high == 0 && value >= 80:
+		return "warn"
+	}
+	return "ok"
 }
 
 // sane filtert sentinelwaarden uit hwmon: NVMe-schijven zetten temp*_max soms

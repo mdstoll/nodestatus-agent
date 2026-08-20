@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Verwijdert serverinfo-agent. Werkt ook als de installatie half mislukt is.
+# Removes the Node Status agent. Works even if the install half-failed.
 set -uo pipefail
 
-BIN=/usr/local/bin/serverinfo-agent
-ETC=/etc/serverinfo-agent
-STATE=/var/lib/serverinfo-agent
-UNIT=/etc/systemd/system/serverinfo-agent.service
-SUDOERS=/etc/sudoers.d/serverinfo-agent
-USER=serverinfo
+BIN=/usr/local/bin/nodestatus-agent
+ETC=/etc/nodestatus-agent
+STATE=/var/lib/nodestatus-agent
+UNIT=/etc/systemd/system/nodestatus-agent.service
+SUDOERS=/etc/sudoers.d/nodestatus-agent
+USER=nodestatus
 PORT=29500
 
 PURGE=0
@@ -23,18 +23,18 @@ while [ $# -gt 0 ]; do
     --purge) PURGE=1; shift;;
     --remove-extras) REMOVE_EXTRAS=1; shift;;
     -h|--help)
-      echo "gebruik: sudo ./uninstall.sh [--purge] [--remove-extras]"
-      echo "  --purge          verwijder ook config, CA, gekoppelde apparaten en de gebruiker"
-      echo "  --remove-extras  verwijder ook smartmontools, whois, dnsutils, qrencode"
+      echo "usage: sudo ./uninstall.sh [--purge] [--remove-extras]"
+      echo "  --purge          also remove config, CA, paired devices and the user"
+      echo "  --remove-extras  also remove smartmontools, whois, dnsutils, qrencode"
       exit 0;;
-    *) echo "onbekende optie $1"; exit 2;;
+    *) echo "unknown option $1"; exit 2;;
   esac
 done
 
-[ "$(id -u)" -eq 0 ] || { c "0;31" "  ✖ draai dit als root"; exit 1; }
+[ "$(id -u)" -eq 0 ] || { c "0;31" "  ✖ run this as root"; exit 1; }
 
 echo
-c "1" "Server Info agent — verwijderen"
+c "1" "Node Status agent — uninstall"
 echo
 
 if [ -f "$ETC/config.toml" ]; then
@@ -42,46 +42,47 @@ if [ -f "$ETC/config.toml" ]; then
   [ -n "$P" ] && PORT="$P"
 fi
 
-systemctl disable --now serverinfo-agent >/dev/null 2>&1 && ok "service gestopt en uitgeschakeld" || inf "service draaide niet"
-[ -f "$UNIT" ] && rm -f "$UNIT" && ok "systemd-unit verwijderd"
+systemctl disable --now nodestatus-agent >/dev/null 2>&1 && ok "service stopped and disabled" || inf "service was not running"
+[ -f "$UNIT" ] && rm -f "$UNIT" && ok "systemd unit removed"
 systemctl daemon-reload >/dev/null 2>&1
-systemctl reset-failed serverinfo-agent >/dev/null 2>&1
+systemctl reset-failed nodestatus-agent >/dev/null 2>&1
 
-[ -f "$BIN" ] && rm -f "$BIN" && ok "binary verwijderd"
+[ -f "$BIN" ] && rm -f "$BIN" && ok "binary removed"
 
-if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Server Info"; then
-  while ufw status numbered | grep -q "Server Info"; do
-    N="$(ufw status numbered | grep -m1 "Server Info" | sed 's/^\[ *\([0-9]*\)\].*/\1/')"
+if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Node Status"; then
+  while ufw status numbered | grep -q "Node Status"; do
+    N="$(ufw status numbered | grep -m1 "Node Status" | sed 's/^\[ *\([0-9]*\)\].*/\1/')"
     yes | ufw delete "$N" >/dev/null 2>&1 || break
   done
-  ok "ufw-regels verwijderd"
+  ok "ufw rules removed"
 fi
 
 if [ "$PURGE" -eq 1 ]; then
-  [ -d "$ETC" ]   && rm -rf "$ETC"   && ok "configuratie, CA en certificaten verwijderd"
-  [ -d "$STATE" ] && rm -rf "$STATE" && ok "gekoppelde apparaten verwijderd"
-  [ -f "$SUDOERS" ] && rm -f "$SUDOERS" && ok "sudoers-regel verwijderd"
-  id -u "$USER" >/dev/null 2>&1 && userdel "$USER" >/dev/null 2>&1 && ok "gebruiker $USER verwijderd"
+  [ -d "$ETC" ]   && rm -rf "$ETC"   && ok "config, CA and certificates removed"
+  [ -d "$STATE" ] && rm -rf "$STATE" && ok "paired devices removed"
+  [ -f "$SUDOERS" ] && rm -f "$SUDOERS" && ok "sudoers rule removed"
+  [ -f "${SUDOERS}-gpu" ] && rm -f "${SUDOERS}-gpu" && ok "GPU sudoers rule removed"
+  id -u "$USER" >/dev/null 2>&1 && userdel "$USER" >/dev/null 2>&1 && ok "user $USER removed"
 else
-  [ -d "$ETC" ]   && kept+=("$ETC (config, CA, certificaten)")
-  [ -d "$STATE" ] && kept+=("$STATE (gekoppelde apparaten)")
-  [ -f "$SUDOERS" ] && kept+=("$SUDOERS (sudoers-regel voor smartctl)")
-  id -u "$USER" >/dev/null 2>&1 && kept+=("gebruiker $USER")
+  [ -d "$ETC" ]   && kept+=("$ETC (config, CA, certificates)")
+  [ -d "$STATE" ] && kept+=("$STATE (paired devices)")
+  [ -f "$SUDOERS" ] && kept+=("$SUDOERS (sudoers rule for smartctl)")
+  id -u "$USER" >/dev/null 2>&1 && kept+=("user $USER")
 fi
 
 if [ "$REMOVE_EXTRAS" -eq 1 ]; then
   DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq smartmontools whois dnsutils qrencode lm-sensors >/dev/null 2>&1 \
-    && ok "extra pakketten verwijderd" || inf "extra pakketten niet verwijderd"
+    && ok "optional packages removed" || inf "optional packages not removed"
 else
-  kept+=("extra pakketten (smartmontools, whois, dnsutils, qrencode, lm-sensors)")
+  kept+=("optional packages (smartmontools, whois, dnsutils, qrencode, lm-sensors)")
 fi
 
 echo
 if [ ${#kept[@]} -gt 0 ]; then
-  c "0;33" "  Niet verwijderd:"
+  c "0;33" "  Left in place:"
   for k in "${kept[@]}"; do echo "    · $k"; done
-  echo "    Draai met --purge --remove-extras om ook deze op te ruimen."
+  echo "    Run with --purge --remove-extras to clean these up too."
 else
-  c "0;32" "  Alles opgeruimd — er is niets van Server Info achtergebleven."
+  c "0;32" "  All clean — nothing of Node Status was left behind."
 fi
 echo

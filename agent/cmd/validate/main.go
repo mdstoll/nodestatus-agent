@@ -4,7 +4,7 @@
 //
 // Gebruik:
 //
-//	sudo serverinfo-agent enroll --new        # op de server, geeft een code
+//	sudo nodestatus-agent enroll --new        # op de server, geeft een code
 //	SI_HOST=192.168.1.102:29500 SI_CODE=XXXXXXXX go run ./cmd/validate
 //	SI_HOST=... SI_CODE=... SI_DUMP=/v1/metrics go run ./cmd/validate
 package main

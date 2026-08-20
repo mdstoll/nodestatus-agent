@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"serverinfo/internal/config"
-	"serverinfo/internal/control"
-	"serverinfo/internal/pki"
+	"nodestatus/internal/config"
+	"nodestatus/internal/control"
+	"nodestatus/internal/pki"
 )
 
 func stateDir() string {
 	cfg, err := config.Load(defaultConfigPath())
 	if err != nil {
-		return "/var/lib/serverinfo-agent"
+		return "/var/lib/nodestatus-agent"
 	}
 	return cfg.StateDir
 }
@@ -68,7 +68,7 @@ func cmdEnroll() {
 }
 
 func printPairing(info control.EnrollInfo, host string, port int) {
-	url := fmt.Sprintf("serverinfo://enroll?h=%s&p=%d&fp=%s&c=%s&n=%s",
+	url := fmt.Sprintf("nodestatus://enroll?h=%s&p=%d&fp=%s&c=%s&n=%s",
 		host, port, info.Fingerprint, info.Code, info.Hostname)
 
 	expires := time.Unix(info.ExpiresAt, 0).Format("15:04")
@@ -83,7 +83,7 @@ func printPairing(info control.EnrollInfo, host string, port int) {
 	fmt.Printf("    Fingerprint  %s…%s\n\n", info.Fingerprint[:8], info.Fingerprint[len(info.Fingerprint)-8:])
 
 	if _, err := exec.LookPath("qrencode"); err == nil {
-		fmt.Println("    Scan deze QR in de Server Info-app:")
+		fmt.Println("    Scan deze QR in de Node Status app:")
 		fmt.Println()
 		cmd := exec.Command("qrencode", "-t", "UTF8", "-m", "4", url)
 		cmd.Stdout = os.Stdout
@@ -98,7 +98,7 @@ func printPairing(info control.EnrollInfo, host string, port int) {
 
 func cmdDevices() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "gebruik: serverinfo-agent devices list|revoke <id>")
+		fmt.Fprintln(os.Stderr, "gebruik: nodestatus-agent devices list|revoke <id>")
 		os.Exit(2)
 	}
 	sub := os.Args[1]
@@ -117,7 +117,7 @@ func cmdDevices() {
 		_ = json.Unmarshal(b, &devs)
 		if len(devs) == 0 {
 			fmt.Println("Geen gekoppelde apparaten. Open een venster met:")
-			fmt.Println("  sudo serverinfo-agent enroll --new")
+			fmt.Println("  sudo nodestatus-agent enroll --new")
 			return
 		}
 		fmt.Printf("%-10s %-24s %-12s %-16s %s\n", "ID", "NAAM", "GEKOPPELD", "LAATST GEZIEN", "VERLOOPT")
@@ -128,7 +128,7 @@ func cmdDevices() {
 		}
 	case "revoke":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "gebruik: serverinfo-agent devices revoke <id>")
+			fmt.Fprintln(os.Stderr, "gebruik: nodestatus-agent devices revoke <id>")
 			os.Exit(2)
 		}
 		resp, err := control.Call(stateDir(), control.Request{Cmd: "devices-revoke", Arg: os.Args[2]})

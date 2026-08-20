@@ -62,7 +62,7 @@ func LoadOrCreateCA(dir string) (*CA, error) {
 	host, _ := os.Hostname()
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial(),
-		Subject:               pkix.Name{CommonName: "Server Info CA (" + host + ")", Organization: []string{"Server Info"}},
+		Subject:               pkix.Name{CommonName: "Node Status CA (" + host + ")", Organization: []string{"Node Status"}},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().AddDate(10, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
@@ -141,7 +141,7 @@ func (ca *CA) ensureServerCert(certPath, keyPath string, force bool) (bool, erro
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial(),
-		Subject:      pkix.Name{CommonName: host, Organization: []string{"Server Info"}},
+		Subject:      pkix.Name{CommonName: host, Organization: []string{"Node Status"}},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().AddDate(0, 0, ServerCertDays),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
@@ -240,7 +240,7 @@ func (ca *CA) IssueClient(pub *ecdsa.PublicKey, commonName string, days int) (ce
 	cn := sanitizeCN(commonName)
 	tmpl := &x509.Certificate{
 		SerialNumber: serial(),
-		Subject:      pkix.Name{CommonName: cn, Organization: []string{"Server Info Device"}},
+		Subject:      pkix.Name{CommonName: cn, Organization: []string{"Node Status Device"}},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().AddDate(0, 0, days),
 		KeyUsage:     x509.KeyUsageDigitalSignature,

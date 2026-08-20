@@ -274,8 +274,21 @@ type LogLine struct {
 	Message  string  `json:"message"`
 }
 
+// specialSources zijn geen losse unit of bestand maar hele journaal-vensters.
+// Zonder deze twee mist de log-tool precies wat je op een Linux-machine als
+// eerste opent: alles, en de kernel.
+var specialSources = []LogSource{
+	{ID: "journal:all", Label: "System journal (all)", Kind: "journal", Available: true},
+	{ID: "journal:kernel", Label: "Kernel (dmesg)", Kind: "journal", Available: true},
+	{ID: "journal:errors", Label: "Errors only (all units)", Kind: "journal", Available: true},
+	{ID: "journal:boot", Label: "Current boot", Kind: "journal", Available: true},
+}
+
 func LogSources(ctx context.Context, units, files []string) []LogSource {
 	out := []LogSource{}
+	if Has("journalctl") {
+		out = append(out, specialSources...)
+	}
 	// Alleen units tonen die daadwerkelijk op deze machine bestaan. Anders
 	// staat de lijst vol met nginx en docker op een server waar ze niet
 	// draaien, en dat maakt de lijst waardeloos.
@@ -319,6 +332,36 @@ func installedUnits(ctx context.Context) map[string]bool {
 func Logs(ctx context.Context, source string, lines int, since, priority, query string, units, files []string) ([]LogLine, error) {
 	out := []LogLine{}
 	lines = ClampInt(lines, 1, 500, 200)
+
+	if kind, ok := strings.CutPrefix(source, "journal:"); ok {
+		args := []string{"-n", strconv.Itoa(lines), "-o", "json", "--no-pager"}
+		switch kind {
+		case "all":
+		case "kernel":
+			args = append(args, "-k")
+		case "errors":
+			args = append(args, "-p", "3")
+		case "boot":
+			args = append(args, "-b")
+		default:
+			return nil, errNotAllowed
+		}
+		if since != "" && validSince(since) {
+			args = append(args, "--since", "-"+since)
+		}
+		if p := priorityNum(priority); p >= 0 && kind != "errors" {
+			args = append(args, "-p", strconv.Itoa(p))
+		}
+		if query != "" && len(query) < 100 {
+			args = append(args, "-g", regexp.QuoteMeta(query))
+		}
+		b, err := Run(ctx, "journalctl", args...)
+		if err != nil {
+			return out, nil
+		}
+		return parseJournal(b), nil
+	}
+
 	if unit, ok := strings.CutPrefix(source, "unit:"); ok {
 		if !inList(unit, units) {
 			return nil, errNotAllowed
@@ -468,15 +511,40 @@ type Process struct {
 	Threads int     `json:"threads"`
 }
 
+// ProcessSummary vat de proceslijst samen. Zombies apart tellen is niet
+// academisch: op de testmachine stonden er 8194 van, allemaal van één
+// programma dat zijn children niet opruimt. Dat wil je in één oogopslag zien.
+type ProcessSummary struct {
+	Total    int `json:"total"`
+	Running  int `json:"running"`
+	Sleeping int `json:"sleeping"`
+	Stopped  int `json:"stopped"`
+	Zombie   int `json:"zombie"`
+	Threads  int `json:"threads"`
+}
+
+// ZombieParent is een proces dat zijn afgesloten children niet opruimt.
+type ZombieParent struct {
+	PID   int    `json:"pid"`
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type ProcessesResult struct {
+	Summary       ProcessSummary `json:"summary"`
+	Processes     []Process      `json:"processes"`
+	ZombieParents []ZombieParent `json:"zombie_parents,omitempty"`
+}
+
 // Processes leest /proc rechtstreeks en berekent CPU% over een venster van
 // 300 ms, zodat het een momentaan percentage is en niet het gemiddelde
 // sinds het proces startte.
-func Processes(memTotal uint64) []Process {
-	first := procCPUSnapshot()
+func Processes(memTotal uint64) ProcessesResult {
+	first, summary, zombies := procSnapshot(true)
 	time.Sleep(300 * time.Millisecond)
-	second := procCPUSnapshot()
-	hz := float64(100) // USER_HZ
-	elapsed := 0.3
+	second, _, _ := procSnapshot(false)
+	const hz = 100.0 // USER_HZ
+	const elapsed = 0.3
 
 	out := []Process{}
 	for pid, s2 := range second {
@@ -488,7 +556,10 @@ func Processes(memTotal uint64) []Process {
 		if cpu < 0 {
 			cpu = 0
 		}
-		p := Process{PID: pid, Name: s2.name, User: s2.user, CPU: round2(cpu), RSS: s2.rss, State: s2.state, Threads: s2.threads}
+		p := Process{
+			PID: pid, Name: s2.name, User: s2.user, CPU: round2(cpu),
+			RSS: s2.rss, State: s2.state, Threads: s2.threads,
+		}
 		if memTotal > 0 {
 			p.MemPct = round2(float64(s2.rss) / float64(memTotal) * 100)
 		}
@@ -503,7 +574,7 @@ func Processes(memTotal uint64) []Process {
 	if len(out) > 200 {
 		out = out[:200]
 	}
-	return out
+	return ProcessesResult{Summary: summary, Processes: out, ZombieParents: zombies}
 }
 
 type procSnap struct {
@@ -513,13 +584,21 @@ type procSnap struct {
 	rss     uint64
 	state   string
 	threads int
+	ppid    int
 }
 
-func procCPUSnapshot() map[int]procSnap {
+// procSnapshot leest /proc. Zombies worden geteld maar niet meegenomen in de
+// CPU-meting: ze verbruiken niets meer, en op een machine met duizenden
+// zombies zou een tweede ronde langs al die bestanden puur verspilling zijn.
+func procSnapshot(withSummary bool) (map[int]procSnap, ProcessSummary, []ZombieParent) {
 	out := map[int]procSnap{}
+	var summary ProcessSummary
+	zombieByParent := map[int]int{}
+	parentName := map[int]string{}
+
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
-		return out
+		return out, summary, nil
 	}
 	pageSize := uint64(os.Getpagesize())
 	for _, e := range entries {
@@ -542,19 +621,54 @@ func procCPUSnapshot() map[int]procSnap {
 			continue
 		}
 		n := func(i int) uint64 { v, _ := strconv.ParseUint(f[i], 10, 64); return v }
+		state := f[0]
 		snap := procSnap{
-			ticks:   n(11) + n(12), // utime + stime (0-based na state)
+			ticks:   n(11) + n(12), // utime + stime
 			name:    name,
-			state:   f[0],
+			state:   state,
 			threads: int(n(17)),
 			rss:     n(21) * pageSize,
+			ppid:    int(n(1)),
 		}
+		if withSummary {
+			summary.Total++
+			summary.Threads += snap.threads
+			switch state {
+			case "R":
+				summary.Running++
+			case "S", "D", "I":
+				summary.Sleeping++
+			case "T", "t":
+				summary.Stopped++
+			case "Z":
+				summary.Zombie++
+				zombieByParent[snap.ppid]++
+			}
+		}
+		if state == "Z" {
+			continue // geen CPU meer, en niet interessant in de lijst
+		}
+		parentName[pid] = name
 		if st, err := os.Stat("/proc/" + e.Name()); err == nil {
 			snap.user = ownerName(st)
 		}
 		out[pid] = snap
 	}
-	return out
+
+	var parents []ZombieParent
+	if withSummary {
+		for ppid, count := range zombieByParent {
+			if count < 5 {
+				continue // een enkele zombie is normaal
+			}
+			parents = append(parents, ZombieParent{PID: ppid, Name: parentName[ppid], Count: count})
+		}
+		sort.Slice(parents, func(i, j int) bool { return parents[i].Count > parents[j].Count })
+		if len(parents) > 5 {
+			parents = parents[:5]
+		}
+	}
+	return out, summary, parents
 }
 
 func round2(f float64) float64 { return float64(int(f*100+0.5)) / 100 }

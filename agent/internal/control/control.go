@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"serverinfo/internal/pki"
-	"serverinfo/internal/store"
+	"nodestatus/internal/pki"
+	"nodestatus/internal/store"
 )
 
 type Request struct {
@@ -164,11 +164,30 @@ func isVirtual(n string) bool {
 	return false
 }
 
+// unreachable maakt van een kale dial-fout een bruikbaar advies. "connection
+// refused" op een unix-socket zegt een gebruiker niets; wat hij wil weten is
+// of de service draait en wat hij nu moet doen.
+func unreachable(stateDir string, cause error) error {
+	sock := SocketPath(stateDir)
+	if _, statErr := os.Stat(sock); statErr != nil {
+		return fmt.Errorf("de agent draait niet — start hem met:\n"+
+			"    sudo systemctl start nodestatus-agent\n"+
+			"  en controleer daarna:\n"+
+			"    systemctl status nodestatus-agent\n"+
+			"  (socket %s bestaat niet)", sock)
+	}
+	return fmt.Errorf("de agent luistert niet op zijn controlesocket.\n"+
+		"  Meestal komt dat doordat er een tweede agent is gestart die de socket\n"+
+		"  heeft overgenomen en daarna is gestopt. Een herstart lost het op:\n"+
+		"    sudo systemctl restart nodestatus-agent\n"+
+		"  Details: %v", cause)
+}
+
 // Call stuurt één commando naar de draaiende agent.
 func Call(stateDir string, req Request) (*Response, error) {
 	c, err := net.DialTimeout("unix", SocketPath(stateDir), 3*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("kan de agent niet bereiken (draait serverinfo-agent?): %w", err)
+		return nil, unreachable(stateDir, err)
 	}
 	defer c.Close()
 	c.SetDeadline(time.Now().Add(10 * time.Second))

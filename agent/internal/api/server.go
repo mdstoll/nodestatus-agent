@@ -13,11 +13,11 @@ import (
 	"sync"
 	"time"
 
-	"serverinfo/internal/collect"
-	"serverinfo/internal/config"
-	"serverinfo/internal/pki"
-	"serverinfo/internal/store"
-	"serverinfo/internal/tools"
+	"nodestatus/internal/collect"
+	"nodestatus/internal/config"
+	"nodestatus/internal/pki"
+	"nodestatus/internal/store"
+	"nodestatus/internal/tools"
 )
 
 type Server struct {
@@ -72,7 +72,7 @@ func (s *Server) TLSConfig(certs *pki.CertManager) *tls.Config {
 	base.GetConfigForClient = func(hi *tls.ClientHelloInfo) (*tls.Config, error) {
 		c := base.Clone()
 		c.GetConfigForClient = nil
-		if s.store.EnrollmentOpen() || s.store.Count() == 0 {
+		if s.store.AcceptsUnauthenticated() || s.store.Count() == 0 {
 			c.ClientAuth = tls.VerifyClientCertIfGiven
 		} else {
 			c.ClientAuth = tls.RequireAndVerifyClientCert
@@ -215,7 +215,7 @@ func (s *Server) authenticated(h http.HandlerFunc) http.Handler {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		token := r.Header.Get("X-Server-Info-Token")
+		token := r.Header.Get("X-Node-Status-Token")
 		if token == "" {
 			if v, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 				token = strings.TrimSpace(v)

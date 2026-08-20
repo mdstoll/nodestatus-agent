@@ -7,16 +7,18 @@ DIST    := dist
 all: build
 
 build:
-	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(DIST)/serverinfo-agent ./cmd/serverinfo-agent
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(DIST)/nodestatus-agent ./cmd/nodestatus-agent
 
+# install.sh staat ook in de repo-root zodat de curl-one-liner werkt.
 release: clean
+	@cp packaging/install.sh ../install.sh
 	@for arch in amd64 arm64; do \
 	  echo "→ linux/$$arch"; \
 	  mkdir -p $(DIST)/$$arch; \
 	  CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -ldflags "$(LDFLAGS)" \
-	    -o $(DIST)/$$arch/serverinfo-agent ./cmd/serverinfo-agent; \
-	  cp packaging/install.sh packaging/uninstall.sh packaging/serverinfo-agent.service $(DIST)/$$arch/; \
-	  tar -czf $(DIST)/serverinfo-agent_$(VERSION)_linux_$$arch.tar.gz -C $(DIST)/$$arch .; \
+	    -o $(DIST)/$$arch/nodestatus-agent ./cmd/nodestatus-agent; \
+	  cp packaging/install.sh packaging/uninstall.sh packaging/nodestatus-agent.service $(DIST)/$$arch/; \
+	  tar -czf $(DIST)/nodestatus-agent_linux_$$arch.tar.gz -C $(DIST)/$$arch .; \
 	done
 	@cd $(DIST) && shasum -a 256 *.tar.gz > SHA256SUMS
 	@ls -lh $(DIST)/*.tar.gz $(DIST)/SHA256SUMS

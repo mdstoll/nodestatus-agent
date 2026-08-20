@@ -67,18 +67,29 @@ type Temp struct {
 	Primary  bool    `json:"primary,omitempty"`
 }
 
+// GPUEngine is een deelmotor van een geïntegreerde GPU (render, video,
+// blitter). Intel rapporteert belasting per motor in plaats van één getal.
+type GPUEngine struct {
+	Name string  `json:"name"`
+	Busy float64 `json:"busy"`
+}
+
 type GPU struct {
-	Index       int     `json:"index"`
-	Vendor      string  `json:"vendor"`
-	Name        string  `json:"name"`
-	Driver      string  `json:"driver,omitempty"`
-	UtilPercent float64 `json:"util_percent"`
-	MemUsed     uint64  `json:"mem_used"`
-	MemTotal    uint64  `json:"mem_total"`
-	TempC       float64 `json:"temp_c,omitempty"`
-	PowerW      float64 `json:"power_w,omitempty"`
-	FanPercent  float64 `json:"fan_percent,omitempty"`
-	ClockMHz    int     `json:"clock_mhz,omitempty"`
+	Index       int         `json:"index"`
+	Vendor      string      `json:"vendor"`
+	Name        string      `json:"name"`
+	Driver      string      `json:"driver,omitempty"`
+	UtilPercent float64     `json:"util_percent"`
+	MemUsed     uint64      `json:"mem_used"`
+	MemTotal    uint64      `json:"mem_total"`
+	SharedMem   bool        `json:"shared_memory,omitempty"`
+	TempC       float64     `json:"temp_c,omitempty"`
+	PowerW      float64     `json:"power_w,omitempty"`
+	FanPercent  float64     `json:"fan_percent,omitempty"`
+	ClockMHz    int         `json:"clock_mhz,omitempty"`
+	ClockMaxMHz int         `json:"clock_max_mhz,omitempty"`
+	Engines     []GPUEngine `json:"engines,omitempty"`
+	Note        string      `json:"note,omitempty"`
 }
 
 // Sample is één momentopname; dit is exact wat over de SSE-stream gaat.

@@ -36,6 +36,13 @@ type Store struct {
 	enrollExpires  time.Time
 	enrollAttempts int
 	maxAttempts    int
+
+	// Korte nasleep waarin client-certificaten nog optioneel blijven. Een
+	// client kan meerdere verbindingen tegelijk opzetten; sluit het venster
+	// op het moment van koppelen keihard, dan sneuvelt zo'n parallelle
+	// verbinding op de handshake en lijkt het koppelen mislukt terwijl het
+	// juist lukte. De code is dan al verbrand, dus dit opent niets.
+	graceUntil time.Time
 }
 
 func New(dir string, maxAttempts int) (*Store, error) {
@@ -187,6 +194,7 @@ func (s *Store) CloseEnrollment() {
 	s.mu.Lock()
 	s.enrollCode = ""
 	s.enrollExpires = time.Time{}
+	s.graceUntil = time.Now().Add(15 * time.Second)
 	s.mu.Unlock()
 }
 
@@ -194,6 +202,15 @@ func (s *Store) EnrollmentOpen() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.enrollCode != "" && time.Now().Before(s.enrollExpires)
+}
+
+// AcceptsUnauthenticated bepaalt of de TLS-laag een client zonder certificaat
+// nog toelaat: tijdens een koppelvenster en kort daarna.
+func (s *Store) AcceptsUnauthenticated() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	open := s.enrollCode != "" && time.Now().Before(s.enrollExpires)
+	return open || time.Now().Before(s.graceUntil)
 }
 
 func (s *Store) EnrollmentExpiry() time.Time {

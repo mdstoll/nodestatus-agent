@@ -1,0 +1,48 @@
+[Unit]
+Description=Node Status agent
+Documentation=https://github.com/merlinstoll/server-info
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nodestatus
+Group=nodestatus
+ExecStart=/usr/local/bin/nodestatus-agent run --config /etc/nodestatus-agent/config.toml
+Restart=on-failure
+RestartSec=3
+
+# --- hardening ---
+# NoNewPrivileges is deliberately OFF. NVMe SMART needs CAP_SYS_ADMIN via
+# NVME_IOCTL_ADMIN_CMD. The alternative was granting the agent CAP_SYS_ADMIN,
+# which is near-root for the whole process. Now the agent can run exactly one
+# command with pinned arguments through sudo (/etc/sudoers.d/nodestatus-agent)
+# and nothing else. That is the narrower of the two.
+NoNewPrivileges=no
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+# perf_event_open is not in @system-service, but intel_gpu_top needs it to
+# read GPU utilisation. Without this the child process is killed with SIGSYS
+# ("bad system call"). The agent gains nothing from it without CAP_PERFMON,
+# which only comes via the sudoers rule for that single command.
+SystemCallFilter=@system-service perf_event_open
+# /etc is writable for exactly one purpose: renewing the server certificate
+# before it expires after 397 days. The rest of the system stays read-only
+# thanks to ProtectSystem=strict.
+ReadWritePaths=/var/lib/nodestatus-agent /etc/nodestatus-agent
+SupplementaryGroups=systemd-journal disk
+MemoryMax=128M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

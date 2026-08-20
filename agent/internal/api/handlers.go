@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"time"
 
-	"serverinfo/internal/collect"
-	"serverinfo/internal/pki"
-	"serverinfo/internal/store"
-	"serverinfo/internal/tools"
+	"nodestatus/internal/collect"
+	"nodestatus/internal/pki"
+	"nodestatus/internal/store"
+	"nodestatus/internal/tools"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +252,7 @@ func (s *Server) handleUpdates(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
 	smp, _ := s.sampler.Latest()
-	writeJSON(w, map[string]any{"processes": tools.Processes(smp.Memory.Total)})
+	writeJSON(w, tools.Processes(smp.Memory.Total))
 }
 
 func (s *Server) handleLogSources(w http.ResponseWriter, r *http.Request) {

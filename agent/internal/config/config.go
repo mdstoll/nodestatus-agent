@@ -51,10 +51,10 @@ func Default() *Config {
 	return &Config{
 		Bind:                "0.0.0.0:29500",
 		Mode:                "lan",
-		TLSCert:             "/etc/serverinfo-agent/cert.pem",
-		TLSKey:              "/etc/serverinfo-agent/key.pem",
-		CADir:               "/etc/serverinfo-agent/ca",
-		StateDir:            "/var/lib/serverinfo-agent",
+		TLSCert:             "/etc/nodestatus-agent/cert.pem",
+		TLSKey:              "/etc/nodestatus-agent/key.pem",
+		CADir:               "/etc/nodestatus-agent/ca",
+		StateDir:            "/var/lib/nodestatus-agent",
 		SampleHz:            1,
 		HistorySize:         300,
 		EnrollWindowMinutes: 15,
@@ -62,8 +62,20 @@ func Default() *Config {
 		ClientCertDays:      365,
 		Features:            Features{SMART: true, GPU: true, Speedtest: true, APT: true, Logs: true},
 		Logs: Logs{
-			Units:    []string{"ssh", "sshd", "nginx", "docker", "cron", "ufw", "systemd-journald", "systemd-resolved"},
-			Files:    []string{"/var/log/syslog", "/var/log/auth.log", "/var/log/kern.log", "/var/log/messages", "/var/log/daemon.log"},
+			// De speciale bronnen "journal" (alles) en "kernel" (dmesg) staan
+			// bewust vooraan: dat zijn de twee die je op een willekeurige
+			// Debian- of Ubuntu-machine als eerste wilt kunnen inzien.
+			Units: []string{
+				"ssh", "sshd", "nginx", "apache2", "docker", "containerd",
+				"cron", "ufw", "systemd-journald", "systemd-resolved",
+				"systemd-networkd", "systemd-timesyncd", "NetworkManager",
+				"unattended-upgrades", "fail2ban", "postfix", "smartd",
+			},
+			Files: []string{
+				"/var/log/syslog", "/var/log/auth.log", "/var/log/kern.log",
+				"/var/log/messages", "/var/log/daemon.log", "/var/log/dpkg.log",
+				"/var/log/boot.log", "/var/log/ufw.log",
+			},
 			MaxLines: 500,
 		},
 	}
@@ -192,13 +204,13 @@ func (c *Config) set(section, key, raw string) error {
 }
 
 func (c *Config) applyEnv() {
-	if v := os.Getenv("SERVERINFO_BIND"); v != "" {
+	if v := os.Getenv("NODESTATUS_BIND"); v != "" {
 		c.Bind = v
 	}
-	if v := os.Getenv("SERVERINFO_MODE"); v != "" {
+	if v := os.Getenv("NODESTATUS_MODE"); v != "" {
 		c.Mode = v
 	}
-	if v := os.Getenv("SERVERINFO_NAME"); v != "" {
+	if v := os.Getenv("NODESTATUS_NAME"); v != "" {
 		c.DisplayName = v
 	}
 }
