@@ -121,7 +121,7 @@ func run() {
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
-		log.Error("configuratie laden mislukt", "err", err)
+		log.Error("could not load configuration", "err", err)
 		os.Exit(1)
 	}
 
@@ -136,12 +136,12 @@ func run() {
 	// dankzij ProtectSystem=strict, dus hier alleen laden.
 	ca, err := pki.LoadOrCreateCA(cfg.CADir)
 	if err != nil {
-		log.Error("CA laden mislukt — draai eerst 'nodestatus-agent bootstrap'", "err", err)
+		log.Error("could not load the CA — run 'nodestatus-agent bootstrap' first", "err", err)
 		os.Exit(1)
 	}
 	st, err := store.New(cfg.StateDir, cfg.EnrollMaxAttempts)
 	if err != nil {
-		log.Error("apparatenlijst laden mislukt", "err", err)
+		log.Error("could not load the device list", "err", err)
 		os.Exit(1)
 	}
 	sampler := collect.NewSampler(cfg.HistorySize, cfg.SampleHz, cfg.Features.GPU)
@@ -156,7 +156,7 @@ func run() {
 
 	ln, err := net.Listen("tcp", cfg.Bind)
 	if err != nil {
-		log.Error("kan niet luisteren — draait er al een agent?", "bind", cfg.Bind, "err", err)
+		log.Error("cannot listen — is another agent already running?", "bind", cfg.Bind, "err", err)
 		os.Exit(1)
 	}
 
@@ -165,43 +165,43 @@ func run() {
 	// die wél draait, en is 'enroll --new' daarna onbereikbaar.
 	ctl := control.NewServer(cfg.StateDir, st, ca, time.Duration(cfg.EnrollWindowMinutes)*time.Minute, log)
 	if err := ctl.Start(); err != nil {
-		log.Error("controlesocket kon niet worden geopend", "err", err)
+		log.Error("could not open the control socket", "err", err)
 		os.Exit(1)
 	}
 	defer ctl.Close()
 	if cfg.TLSEnabled() {
 		certs, err := pki.NewCertManager(ca, cfg.TLSCert, cfg.TLSKey)
 		if err != nil {
-			log.Error("servercertificaat laden mislukt — draai 'nodestatus-agent bootstrap'", "err", err)
+			log.Error("could not load the server certificate — run 'nodestatus-agent bootstrap'", "err", err)
 			os.Exit(1)
 		}
 		// Het servercertificaat mag maar 397 dagen geldig zijn (Apple weigert
 		// langer), dus vernieuwen we het automatisch ruim voor het verloopt.
 		if renewed, err := certs.MaybeRenew(); err != nil {
-			log.Warn("certificaat vernieuwen mislukt", "err", err)
+			log.Warn("certificate renewal failed", "err", err)
 		} else if renewed {
-			log.Info("servercertificaat vernieuwd", "verloopt", certs.ExpiresAt().Format("2006-01-02"))
+			log.Info("server certificate renewed", "expires", certs.ExpiresAt().Format("2006-01-02"))
 		}
 		go func() {
 			for range time.Tick(12 * time.Hour) {
 				if renewed, err := certs.MaybeRenew(); err != nil {
-					log.Warn("certificaat vernieuwen mislukt", "err", err)
+					log.Warn("certificate renewal failed", "err", err)
 				} else if renewed {
-					log.Info("servercertificaat vernieuwd", "verloopt", certs.ExpiresAt().Format("2006-01-02"))
+					log.Info("server certificate renewed", "expires", certs.ExpiresAt().Format("2006-01-02"))
 				}
 			}
 		}()
-		log.Info("servercertificaat geldig", "tot", certs.ExpiresAt().Format("2006-01-02"))
+		log.Info("server certificate valid", "until", certs.ExpiresAt().Format("2006-01-02"))
 		ln = tls.NewListener(ln, srv.TLSConfig(certs))
 	}
 
-	log.Info("nodestatus-agent gestart",
+	log.Info("nodestatus-agent started",
 		"version", version, "bind", cfg.Bind, "mode", cfg.Mode,
 		"tls", cfg.TLSEnabled(), "devices", st.Count(), "capabilities", strings.Join(caps, ","))
 
 	go func() {
 		if err := httpSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("server gestopt", "err", err)
+			log.Error("server stopped", "err", err)
 			os.Exit(1)
 		}
 	}()
@@ -209,7 +209,7 @@ func run() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
-	log.Info("afsluiten")
+	log.Info("shutting down")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)

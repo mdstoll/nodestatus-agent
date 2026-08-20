@@ -126,6 +126,18 @@ systemctl stop nodestatus-agent 2>/dev/null || true
 install -m 0755 -o root -g root "$SRC_BIN" "$BIN"
 ok "installed binary ($BIN, $(du -h "$BIN" | cut -f1))"
 
+# Ship the uninstaller too, so removing the agent does not depend on still
+# having the tarball around.
+UNINST_SRC=""
+for cand in "$SRC_DIR/uninstall.sh" "$(dirname "$SRC_BIN")/uninstall.sh"; do
+  [ -f "$cand" ] && UNINST_SRC="$cand" && break
+done
+if [ -n "$UNINST_SRC" ]; then
+  install -m 0755 "$UNINST_SRC" /usr/local/bin/nodestatus-uninstall
+  ln -sf /usr/local/bin/nodestatus-uninstall /usr/local/bin/uninstall.sh
+  ok "uninstaller installed (/usr/local/bin/nodestatus-uninstall)"
+fi
+
 install -d -m 0750 -o "$USER" -g "$USER" "$ETC" "$ETC/ca" "$STATE"
 
 # ---------- 5. connection profile ----------

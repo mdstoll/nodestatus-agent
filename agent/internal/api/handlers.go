@@ -57,7 +57,7 @@ type enrollResponse struct {
 
 func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	if !s.store.EnrollmentOpen() {
-		s.authFail(r, "enrollment gesloten")
+		s.authFail(r, "pairing window closed")
 		time.Sleep(250 * time.Millisecond)
 		writeErr(w, http.StatusForbidden, "unavailable", "er staat geen koppelvenster open")
 		return
@@ -68,7 +68,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.store.CheckEnrollCode(req.Code) {
-		s.authFail(r, "verkeerde koppelcode")
+		s.authFail(r, "wrong pairing code")
 		time.Sleep(500 * time.Millisecond)
 		writeErr(w, http.StatusForbidden, "unauthorized", "koppelcode klopt niet")
 		return
@@ -98,7 +98,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.CloseEnrollment()
-	s.log.Info("apparaat gekoppeld", "device", dev.Name, "id", dev.ID)
+	s.log.Info("device paired", "device", dev.Name, "id", dev.ID)
 
 	si := collect.System(s.cfg.DisplayName, s.version, s.caps)
 	writeJSON(w, enrollResponse{
@@ -130,7 +130,7 @@ func (s *Server) handleDeviceRevoke(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not_found", err.Error())
 		return
 	}
-	s.log.Info("apparaat ingetrokken", "device", name)
+	s.log.Info("device revoked", "device", name)
 	writeJSON(w, map[string]any{"revoked": name})
 }
 

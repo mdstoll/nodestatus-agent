@@ -48,6 +48,7 @@ systemctl daemon-reload >/dev/null 2>&1
 systemctl reset-failed nodestatus-agent >/dev/null 2>&1
 
 [ -f "$BIN" ] && rm -f "$BIN" && ok "binary removed"
+rm -f /usr/local/bin/nodestatus-uninstall /usr/local/bin/uninstall.sh 2>/dev/null || true
 
 if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Node Status"; then
   while ufw status numbered | grep -q "Node Status"; do

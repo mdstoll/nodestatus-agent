@@ -48,6 +48,20 @@ func New(cfg *config.Config, ca *pki.CA, st *store.Store, sm *collect.Sampler, v
 	return s
 }
 
+// isLoopbackConn kijkt naar het echte peer-adres van de TCP-verbinding, niet
+// naar een header: dit is de TLS-laag, daar valt niets te vervalsen.
+func isLoopbackConn(hi *tls.ClientHelloInfo) bool {
+	if hi == nil || hi.Conn == nil {
+		return false
+	}
+	host, _, err := net.SplitHostPort(hi.Conn.RemoteAddr().String())
+	if err != nil {
+		return false
+	}
+	addr, err := netip.ParseAddr(host)
+	return err == nil && addr.IsLoopback()
+}
+
 func parsePrefixes(list []string) []netip.Prefix {
 	var out []netip.Prefix
 	for _, c := range list {
@@ -72,9 +86,17 @@ func (s *Server) TLSConfig(certs *pki.CertManager) *tls.Config {
 	base.GetConfigForClient = func(hi *tls.ClientHelloInfo) (*tls.Config, error) {
 		c := base.Clone()
 		c.GetConfigForClient = nil
-		if s.store.AcceptsUnauthenticated() || s.store.Count() == 0 {
+		switch {
+		case s.store.AcceptsUnauthenticated(), s.store.Count() == 0:
 			c.ClientAuth = tls.VerifyClientCertIfGiven
-		} else {
+		case isLoopbackConn(hi):
+			// Verbindingen vanaf de machine zelf mogen zonder certificaat de
+			// handshake doen; de HTTP-laag laat ze daarna alleen bij
+			// /v1/health. Zonder deze uitzondering kan install.sh zijn eigen
+			// zelftest niet uitvoeren zodra er een apparaat gekoppeld is —
+			// mTLS weigert dan al vóór het HTTP-verzoek.
+			c.ClientAuth = tls.VerifyClientCertIfGiven
+		default:
 			c.ClientAuth = tls.RequireAndVerifyClientCert
 		}
 		return c, nil
@@ -203,14 +225,14 @@ func (s *Server) authenticated(h http.HandlerFunc) http.Handler {
 			return
 		}
 		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
-			s.authFail(r, "geen client-certificaat")
+			s.authFail(r, "no client certificate")
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 		fp := pki.CertFingerprint(r.TLS.PeerCertificates[0])
 		dev, ok := s.store.Lookup(fp)
 		if !ok {
-			s.authFail(r, "onbekend of ingetrokken apparaat")
+			s.authFail(r, "unknown or revoked device")
 			time.Sleep(250 * time.Millisecond)
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -222,7 +244,7 @@ func (s *Server) authenticated(h http.HandlerFunc) http.Handler {
 			}
 		}
 		if token == "" || !s.store.VerifyToken(dev, token) {
-			s.authFail(r, "ongeldig token")
+			s.authFail(r, "invalid token")
 			time.Sleep(250 * time.Millisecond)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
