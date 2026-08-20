@@ -197,13 +197,8 @@ apt       = true
 logs      = true
 
 [logs]
-units     = ["ssh", "sshd", "nginx", "apache2", "docker", "containerd", "cron", "ufw",
-             "systemd-journald", "systemd-resolved", "systemd-networkd",
-             "systemd-timesyncd", "NetworkManager", "unattended-upgrades",
-             "fail2ban", "postfix", "smartd"]
-files     = ["/var/log/syslog", "/var/log/auth.log", "/var/log/kern.log",
-             "/var/log/messages", "/var/log/daemon.log", "/var/log/dpkg.log",
-             "/var/log/boot.log", "/var/log/ufw.log"]
+units     = ["ssh", "sshd", "nginx", "apache2", "docker", "containerd", "cron", "ufw", "systemd-journald", "systemd-resolved", "systemd-networkd", "systemd-timesyncd", "NetworkManager", "unattended-upgrades", "fail2ban", "postfix", "smartd"]
+files     = ["/var/log/syslog", "/var/log/auth.log", "/var/log/kern.log", "/var/log/messages", "/var/log/daemon.log", "/var/log/dpkg.log", "/var/log/boot.log", "/var/log/ufw.log"]
 max_lines = 500
 CFG
   chmod 600 "$ETC/config.toml"; chown "$USER:$USER" "$ETC/config.toml"
@@ -251,8 +246,9 @@ fi
 # ---------- 9. CA + server certificate ----------
 # Done here and not in the daemon: ProtectSystem=strict makes /etc read-only
 # for the running agent.
-FP="$(su -s /bin/sh "$USER" -c "$BIN bootstrap --config $ETC/config.toml" 2>&1 | awk '/CA-fingerprint/{print $2}')"
-[ -n "$FP" ] || die "could not create the CA"
+BOOTSTRAP_OUT="$(su -s /bin/sh "$USER" -c "$BIN bootstrap --config $ETC/config.toml" 2>&1 || true)"
+FP="$(printf '%s' "$BOOTSTRAP_OUT" | awk '/CA-fingerprint/{print $2}')"
+[ -n "$FP" ] || die "could not create the CA: $(printf '%s' "$BOOTSTRAP_OUT" | tail -2 | tr '\n' ' ')"
 chown -R "$USER:$USER" "$ETC"
 ok "CA and server certificate created"
 

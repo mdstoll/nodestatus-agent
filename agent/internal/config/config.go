@@ -99,6 +99,18 @@ func Load(path string) (*Config, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		// Arrays mogen over meerdere regels lopen. Dat is hoe je een lange
+		// lijst leesbaar houdt, en het installatiescript schrijft ze zo.
+		if strings.Contains(line, "=") && strings.Contains(line, "[") && !strings.Contains(line, "]") {
+			for sc.Scan() {
+				ln++
+				next := strings.TrimSpace(sc.Text())
+				line += " " + next
+				if strings.Contains(next, "]") {
+					break
+				}
+			}
+		}
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.ToLower(strings.Trim(line, "[]"))
 			continue
