@@ -73,7 +73,12 @@ esac
 ok "preflight ($ARCH, $(. /etc/os-release && echo "$PRETTY_NAME"))"
 
 # ---------- 2. locate or download the binary ----------
-SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo /tmp)"
+# Piped from curl there is no script file, so BASH_SOURCE is unset. Guard it,
+# otherwise `set -u` aborts before we get to the download path.
+SRC_DIR="/tmp"
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+  SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 SRC_BIN=""
 for cand in "$SRC_DIR/nodestatus-agent" "$SRC_DIR/$ARCH/nodestatus-agent"; do
   [ -f "$cand" ] && SRC_BIN="$cand" && break
@@ -252,7 +257,7 @@ chown -R "$USER:$USER" "$ETC"
 ok "CA and server certificate created"
 
 # ---------- 10. systemd ----------
-[ -f "$UNIT_SRC" ] || die "nodestatus-agent.service not found"
+[ -f "$UNIT_SRC" ] || die "nodestatus-agent.service not found next to the binary"
 install -m 0644 "$UNIT_SRC" "$UNIT"
 systemctl daemon-reload
 systemctl enable --quiet nodestatus-agent
