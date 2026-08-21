@@ -106,7 +106,8 @@ xcrun simctl install booted "$(find ~/Library/Developer/Xcode/DerivedData -name 
 
 ### Run on your own iPhone
 
-Sign in to Xcode with your Apple ID (Settings → Accounts), then:
+Open `ios/NodeStatus.xcodeproj` in Xcode once, select your iPhone and press Run. That
+creates the provisioning profile. From then on:
 
 ```bash
 ./deploy-iphone.sh
@@ -115,6 +116,17 @@ Sign in to Xcode with your Apple ID (Settings → Accounts), then:
 The script builds, signs and installs over USB or Wi-Fi, whichever the device is paired
 over. The first time, trust the developer certificate on the phone under
 Settings → General → VPN & Device Management.
+
+It reads the team id and profile out of the installed provisioning profile rather than
+relying on `xcodebuild` reaching your Apple account, which is the part that tends to break.
+Two traps worth knowing:
+
+- The team id is the **OU** of the signing certificate, not the code in its common name.
+  `Apple Development: you@example.com (PH7ZL6P4M9)` — that code is your personal id; the
+  team is a different value entirely, and using the wrong one produces the thoroughly
+  misleading `No Accounts: Add a new account in Accounts settings`.
+- With a free Apple account the profile expires after **7 days**. Press Run in Xcode again
+  to refresh it; the script picks up the new one automatically.
 
 ## 3. Testing
 
