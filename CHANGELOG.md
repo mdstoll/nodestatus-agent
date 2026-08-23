@@ -6,6 +6,21 @@ this yourself.
 
 ## [Unreleased]
 
+## App v0.2.0 — 2026-08-24
+
+### Added
+- Servers on the Server tab can be reordered by holding and dragging —
+  no Edit Mode, no delete-circle UI, just a natural long-press-then-drag.
+- A real app icon, replacing the default placeholder.
+- Tools page reordered to System → Hardware → Network; the Hardware
+  category itself reordered to Hardware overview → CPU Information →
+  Network interfaces → Storage & SMART → Sensors → GPU.
+- Sensors on the Metrics page is now collapsed by default, expanding only
+  on interaction, so a first glance at Metrics stays uncluttered.
+- CPU, RAM, Storage and Load tiles on Metrics are now a uniform size.
+- About: credits "Merlin Stoll" as creator and a closing line — "Built
+  with ❤️ and with the help of AI in the Netherlands".
+
 ## v0.1.1 — 2026-08-23
 
 ### Fixed
