@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -332,6 +333,10 @@ type SensorsResult struct {
 // Sensors leest alle hwmon-waarden: temperatuur, fans, spanning en vermogen.
 func Sensors() SensorsResult {
 	res := SensorsResult{Chips: []SensorChip{}}
+	if rapl := raplChip(); rapl != nil {
+		res.Chips = append(res.Chips, *rapl)
+		res.Available += len(rapl.Sensors)
+	}
 	dirs, _ := filepath.Glob("/sys/class/hwmon/hwmon*")
 	for _, d := range dirs {
 		chip := SensorChip{Name: readTrim(filepath.Join(d, "name")), Sensors: []Sensor{}}
@@ -429,6 +434,85 @@ func sane(typ string, v float64) float64 {
 		}
 	}
 	return v
+}
+
+// raplChip reads Intel RAPL (Running Average Power Limit) via powercap.
+// This is real, hardware-measured power draw — not an estimate — and exists
+// on essentially every Intel CPU since Sandy Bridge, whether or not the
+// board has a PSU-monitoring hwmon chip (most small/embedded boards, like
+// the test machine's NUC, have none). Two energy readings 200 ms apart give
+// an instantaneous wattage from the counter's rate of change.
+//
+// AMD has an equivalent (zenpower / amd_energy hwmon driver), which already
+// surfaces through the ordinary hwmon "power" sensors above when present —
+// RAPL is specifically the Intel-only, non-hwmon path.
+// raplEnergyPath reads energy_uj via sudo: the kernel restricts that one
+// file to root (a 2020 side-channel mitigation) while every other file in
+// the same directory stays world-readable, so this is the one part of RAPL
+// that needs privilege.
+func raplEnergyPath(path string) (uint64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	b, err := RunSudo(ctx, "cat", path)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseUint(strings.TrimSpace(string(b)), 10, 64)
+}
+
+func raplChip() *SensorChip {
+	domains, _ := filepath.Glob("/sys/class/powercap/intel-rapl:[0-9]*")
+	sort.Strings(domains)
+	var readings []struct {
+		label string
+		path  string
+		start uint64
+		max   uint64
+	}
+	for _, d := range domains {
+		// Only top-level domains (package, psys) — skip :0:0 core/uncore
+		// sub-domains, which double-count energy already in the package.
+		if strings.Count(filepath.Base(d), ":") > 1 {
+			continue
+		}
+		name := readTrim(filepath.Join(d, "name"))
+		start, err := raplEnergyPath(filepath.Join(d, "energy_uj"))
+		if name == "" || err != nil {
+			continue
+		}
+		max, _ := strconv.ParseUint(readTrim(filepath.Join(d, "max_energy_range_uj")), 10, 64)
+		readings = append(readings, struct {
+			label string
+			path  string
+			start uint64
+			max   uint64
+		}{label: name, path: d, start: start, max: max})
+	}
+	if len(readings) == 0 {
+		return nil
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	chip := &SensorChip{Name: "RAPL (CPU power)", Sensors: []Sensor{}}
+	for _, r := range readings {
+		end, err := raplEnergyPath(filepath.Join(r.path, "energy_uj"))
+		if err != nil {
+			continue
+		}
+		delta := end - r.start
+		if end < r.start && r.max > 0 { // counter wrapped during the sleep
+			delta = (r.max - r.start) + end
+		}
+		watts := float64(delta) / 1e6 / 0.2
+		chip.Sensors = append(chip.Sensors, Sensor{
+			Key: "rapl/" + r.label, Label: strings.ToUpper(r.label[:1]) + r.label[1:],
+			Type: "power", Value: watts, Unit: "W", Status: "ok",
+		})
+	}
+	if len(chip.Sensors) == 0 {
+		return nil
+	}
+	return chip
 }
 
 func readTrim(p string) string {

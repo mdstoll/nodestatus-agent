@@ -228,6 +228,16 @@ func SudoersRules(user string) []string {
 	if p, ok := lookIntelTop(); ok {
 		out = append(out, user+" ALL=(root) NOPASSWD: "+p+" -J -s "+intelTopInterval)
 	}
+	// RAPL: energy_uj is root-only (a 2020 kernel mitigation against a power-
+	// side-channel attack) while the rest of the powercap tree stays
+	// world-readable. One wildcarded cat rule covers however many domains
+	// this CPU exposes (package, psys, per-socket, ...) without needing to
+	// know the exact count or names in advance.
+	if matches, _ := filepath.Glob("/sys/class/powercap/intel-rapl:[0-9]*/energy_uj"); len(matches) > 0 {
+		if p, err := exec.LookPath("/usr/bin/cat"); err == nil {
+			out = append(out, user+" ALL=(root) NOPASSWD: "+p+" /sys/class/powercap/intel-rapl\\:*/energy_uj")
+		}
+	}
 	return out
 }
 
