@@ -38,6 +38,10 @@ struct ServerListView: View {
         }
     }
 
+    // Long-press-and-drag reordering via .draggable/.dropDestination, not
+    // List.onMove — onMove only shows its grab handles in Edit Mode, which
+    // would mean a permanent row of delete circles just to get dragging.
+    // draggable() gives the hold-then-drag gesture directly, no Edit button.
     private var list: some View {
         ScrollView {
             VStack(spacing: Theme.M.cardGap) {
@@ -46,12 +50,26 @@ struct ServerListView: View {
                                isSelected: server.id == app.selectedID,
                                onSelect: { app.select(server) },
                                onEdit: { editing = server })
+                        .draggable(server.id.uuidString)
+                        .dropDestination(for: String.self) { items, _ in
+                            handleDrop(items, onto: server)
+                        }
                 }
             }
             .padding(.horizontal, Theme.M.screenMargin)
             .padding(.top, 4)
             .padding(.bottom, 90)
         }
+    }
+
+    private func handleDrop(_ items: [String], onto target: Server) -> Bool {
+        guard let draggedID = items.first.flatMap(UUID.init(uuidString:)),
+              let from = app.servers.firstIndex(where: { $0.id == draggedID }),
+              let to = app.servers.firstIndex(where: { $0.id == target.id }),
+              from != to else { return false }
+        let dest = to > from ? to + 1 : to
+        app.moveServers(fromOffsets: IndexSet(integer: from), toOffset: dest)
+        return true
     }
 }
 

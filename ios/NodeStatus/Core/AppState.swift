@@ -114,6 +114,12 @@ final class AppState {
         store.save(servers)
     }
 
+    /// Long-press-and-drag reordering on the Server tab.
+    func moveServers(fromOffsets: IndexSet, toOffset: Int) {
+        servers.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        store.save(servers)
+    }
+
     func remove(_ server: Server) {
         IdentityStore.remove(serverID: server.id)
         servers.removeAll { $0.id == server.id }
