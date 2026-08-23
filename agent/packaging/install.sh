@@ -155,11 +155,33 @@ detect_cidr() {
     | awk '$2 !~ /^(lo|docker|veth|br-|virbr|tun|tap|wg)/ {print $4; exit}' \
     | awk -F/ '{split($1,a,"."); print a[1]"."a[2]"."a[3]".0/"$2}'
 }
+# Is this address actually private (RFC 1918 / CGNAT)? On a home network the
+# primary interface's subnet is a sensible thing to restrict to. On a VPS the
+# "local" subnet is the datacenter's public allocation — often a /16 or /18 —
+# and restricting to it silently locks out every real client while looking
+# like it is locked down. This is exactly what happened on a.mest.dev: mode
+# lan trusted the detected /18 and no phone on any actual network could ever
+# match it.
+is_private_ip() {
+  case "$1" in
+    10.*|192.168.*) return 0;;
+    172.1[6-9].*|172.2[0-9].*|172.3[0-1].*) return 0;;
+    100.6[4-9].*|100.[7-9][0-9].*|100.1[0-1][0-9].*|100.12[0-7].*) return 0;;  # CGNAT/Tailscale 100.64.0.0/10
+    *) return 1;;
+  esac
+}
 BIND="0.0.0.0:$PORT"; ALLOW="[]"; TLS_CERT="$ETC/cert.pem"
 case "$MODE" in
   lan)
     CIDR="$(detect_cidr || true)"
-    [ -n "$CIDR" ] && ALLOW="[\"$CIDR\"]"
+    PRIMARY_IP="${CIDR%%/*}"
+    if [ -n "$CIDR" ] && is_private_ip "$PRIMARY_IP"; then
+      ALLOW="[\"$CIDR\"]"
+    elif [ -n "$CIDR" ]; then
+      warn "primary address $PRIMARY_IP is public, not a private LAN — skipping the subnet restriction"
+      warn "(mode lan would otherwise lock every real client out; mTLS is what actually protects this agent)"
+      warn "for a public server this is the same as --mode public; pass it explicitly to silence this warning"
+    fi
     ;;
   vpn)
     [ -n "$VPN_IP" ] || die "--mode vpn needs --vpn-ip <address>"
@@ -272,7 +294,13 @@ ok "service active ($(systemctl show -p MainPID --value nodestatus-agent) · $(s
 # ---------- 11. firewall ----------
 if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "^Status: active"; then
   case "$MODE" in
-    lan)    [ -n "${CIDR:-}" ] && ufw allow from "$CIDR" to any port "$PORT" proto tcp comment 'Node Status' >/dev/null && ok "ufw: allowed from $CIDR";;
+    lan)
+      if [ "$ALLOW" != "[]" ]; then
+        ufw allow from "$CIDR" to any port "$PORT" proto tcp comment 'Node Status' >/dev/null && ok "ufw: allowed from $CIDR"
+      else
+        ufw allow "$PORT"/tcp comment 'Node Status' >/dev/null && ok "ufw: port $PORT open (public address, see warning above)"
+      fi
+      ;;
     public) ufw allow "$PORT"/tcp comment 'Node Status' >/dev/null && ok "ufw: port $PORT open";;
     vpn)    inf "ufw: no rule needed (agent binds the VPN address only)";;
     proxy)  inf "ufw: no rule needed (agent binds loopback)";;
