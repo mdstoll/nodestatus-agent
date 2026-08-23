@@ -1,10 +1,11 @@
 package collect
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -27,10 +28,10 @@ type gpuCache struct {
 }
 
 func newGPUCache(enabled bool) *gpuCache {
-	// 15 seconden: intel_gpu_top heeft vier seconden nodig per meting, dus
-	// vaker pollen betekent dat er vrijwel permanent een sudo-proces draait.
-	// Dat kostte op de testmachine bijna twee minuten CPU per uur.
-	g := &gpuCache{interval: 15 * time.Second}
+	// Intel komt uit een doorlopende stream en kost per uitlezing niets, dus
+	// hier mag het snel. Alleen nvidia-smi is een echte exec (~80 ms) en die
+	// wordt op de achtergrond ververst.
+	g := &gpuCache{interval: 1 * time.Second}
 	if enabled {
 		g.nvidia, _ = exec.LookPath("nvidia-smi")
 	}
@@ -127,21 +128,22 @@ func intelGPUs() []GPU {
 		if v := readTrim(filepath.Join(card, "gt_act_freq_mhz")); v != "" {
 			g.ClockMHz, _ = strconv.Atoi(v)
 		}
-		sample, topErr := intelTop()
-		if s := sample; s != nil {
-			g.UtilPercent = s.util
-			g.PowerW = s.powerGPU
-			g.Engines = s.engines
-			if s.freq > 0 {
-				g.ClockMHz = int(s.freq)
+		sample, topErr := intelMon.sample()
+		if sample != nil {
+			g.UtilPercent = sample.util
+			g.PowerW = sample.powerGPU
+			g.Engines = sample.engines
+			if sample.freq > 0 {
+				g.ClockMHz = int(sample.freq)
 			}
 		} else {
-			g.Note = "geschat uit de klokfrequentie"
-			if topErr != nil {
-				g.Note = "geschat uit de klokfrequentie — " + topErr.Error()
+			// Nog geen meting (het proces warmt op) of hij lukt niet. De
+			// klokfrequentie uit sysfs is dan de beste indicatie: de GPU
+			// klokt terug naar nul zodra hij idle is.
+			g.Note = "estimated from the clock frequency"
+			if topErr != "" {
+				g.Note = "estimated from the clock frequency — " + topErr
 			}
-			// Zonder PMU is de klokfrequentie de beste indicatie: de GPU
-			// klokt terug naar 0 zodra hij idle is (rc6).
 			if g.ClockMaxMHz > 0 {
 				g.UtilPercent = float64(g.ClockMHz) / float64(g.ClockMaxMHz) * 100
 			}
@@ -181,43 +183,243 @@ type intelSample struct {
 	engines  []GPUEngine
 }
 
-// intelTop draait intel_gpu_top kort en pakt het laatste volledige blok.
-// Het eerste blok heeft een korte meetperiode en staat altijd op nul.
-func intelTop() (*intelSample, error) {
+// intelMonitor houdt één doorlopend intel_gpu_top-proces aan zolang er naar de
+// GPU gekeken wordt. De vorige aanpak — elke 15 seconden een nieuw proces van
+// vier seconden starten — was zowel te traag (de waarde stond een kwartier
+// stil tijdens een conversie) als te duur (er draaide vrijwel permanent een
+// sudo-proces). Eén stream levert elke ~700 ms een verse meting voor de prijs
+// van één proces.
+type intelMonitor struct {
+	mu       sync.Mutex
+	latest   *intelSample
+	latestAt time.Time
+	lastUse  time.Time
+	running  bool
+	lastErr  string
+}
+
+// idleStop bepaalt hoe lang het proces blijft draaien nadat er niemand meer
+// naar kijkt. Kort genoeg om een idle server met rust te laten, lang genoeg
+// om niet te herstarten tussen twee schermen door.
+const gpuIdleStop = 45 * time.Second
+
+// intelTopInterval is het meetinterval in milliseconden. Deze waarde staat
+// ook letterlijk in de sudoers-regel: die pint de argumenten, dus een andere
+// waarde hier betekent "sudo: a password is required" en een GPU die op nul
+// blijft staan. Daarom genereert de agent die regel zelf — zie SudoersRules.
+const intelTopInterval = "600"
+
+var intelMon = &intelMonitor{}
+
+// SudoersRules geeft de regels die de agent nodig heeft, met exact de
+// argumenten die hij ook echt gebruikt. install.sh schrijft ze hieruit weg,
+// zodat code en sudoers niet uit elkaar kunnen lopen.
+func SudoersRules(user string) []string {
+	var out []string
+	for _, p := range []string{"/usr/sbin/smartctl", "/usr/bin/smartctl"} {
+		if _, err := exec.LookPath(p); err == nil {
+			out = append(out, user+" ALL=(root) NOPASSWD: "+
+				p+" -j -A -H -i /dev/sd[a-z], "+
+				p+" -j -A -H -i /dev/nvme[0-9]n[0-9], "+
+				p+" -j -A -H -i /dev/vd[a-z]")
+			break
+		}
+	}
+	if p, ok := lookIntelTop(); ok {
+		out = append(out, user+" ALL=(root) NOPASSWD: "+p+" -J -s "+intelTopInterval)
+	}
+	return out
+}
+
+// sample geeft de laatste meting, of nil zolang het proces nog opwarmt.
+func (m *intelMonitor) sample() (*intelSample, string) {
+	m.mu.Lock()
+	m.lastUse = time.Now()
+	if !m.running {
+		m.running = true
+		go m.run()
+	}
+	s, at, err := m.latest, m.latestAt, m.lastErr
+	m.mu.Unlock()
+
+	if s == nil || time.Since(at) > 5*time.Second {
+		if err != "" {
+			return nil, err
+		}
+		return nil, ""
+	}
+	return s, ""
+}
+
+func (m *intelMonitor) fail(msg string) {
+	m.mu.Lock()
+	m.lastErr = msg
+	m.latest = nil
+	m.running = false
+	m.mu.Unlock()
+}
+
+func (m *intelMonitor) run() {
 	path, ok := lookIntelTop()
 	if !ok {
-		return nil, fmt.Errorf("intel_gpu_top niet geïnstalleerd")
+		m.fail("intel_gpu_top is not installed")
+		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-	defer cancel()
 	sudo, err := exec.LookPath("sudo")
 	if err != nil {
-		return nil, fmt.Errorf("sudo ontbreekt")
+		m.fail("sudo is missing")
+		return
 	}
-	cmd := exec.CommandContext(ctx, sudo, "-n", path, "-J", "-s", "600")
+	cmd := exec.Command(sudo, "-n", path, "-J", "-s", intelTopInterval)
 	cmd.Env = []string{"LC_ALL=C", "PATH="}
-	// intel_gpu_top stopt uit zichzelf niet, dus we kappen hem af. Bewust met
-	// SIGTERM en niet met het standaard SIGKILL: sudo draait het commando in
-	// een pty en moet de kans krijgen die buffer te legen, anders komt er geen
-	// byte terug.
-	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-	cmd.WaitDelay = 2 * time.Second
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		m.fail(err.Error())
+		return
+	}
+	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	runErr := cmd.Run()
-	s := parseIntelTop(stdout.Bytes())
-	if s == nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = fmt.Sprintf("geen bruikbare uitvoer (%d bytes, %v)", stdout.Len(), runErr)
+	if err := cmd.Start(); err != nil {
+		m.fail(err.Error())
+		return
+	}
+
+	// Stoppen zodra er een tijd niemand meer kijkt.
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				m.mu.Lock()
+				idle := time.Since(m.lastUse) > gpuIdleStop
+				m.mu.Unlock()
+				if idle {
+					// SIGTERM, niet SIGKILL: sudo draait het commando in een
+					// pty en moet die buffer nog kunnen legen.
+					_ = cmd.Process.Signal(syscall.SIGTERM)
+					return
+				}
+			}
 		}
+	}()
+
+	streamJSONObjects(stdout, func(raw []byte) {
+		if s := parseIntelBlock(raw); s != nil {
+			m.mu.Lock()
+			m.latest, m.latestAt, m.lastErr = s, time.Now(), ""
+			m.mu.Unlock()
+		}
+	})
+	close(done)
+	_ = cmd.Wait()
+
+	m.mu.Lock()
+	m.running = false
+	if m.latest == nil && m.lastErr == "" {
+		msg := strings.TrimSpace(stderr.String())
 		if i := strings.IndexByte(msg, '\n'); i > 0 {
 			msg = msg[:i]
 		}
-		return nil, fmt.Errorf("%s", msg)
+		if msg == "" {
+			msg = "no usable output"
+		}
+		m.lastErr = msg
 	}
-	return s, nil
+	m.mu.Unlock()
+}
+
+// streamJSONObjects knipt complete { … }-blokken uit een lopende stream en
+// geeft ze één voor één door. intel_gpu_top schrijft een array die nooit wordt
+// afgesloten, met komma's tussen de blokken; een json.Decoder loopt daarop vast.
+func streamJSONObjects(r io.Reader, emit func([]byte)) {
+	br := bufio.NewReaderSize(r, 64*1024)
+	var buf []byte
+	depth := 0
+	inString, escaped := false, false
+	for {
+		c, err := br.ReadByte()
+		if err != nil {
+			return
+		}
+		if depth > 0 {
+			buf = append(buf, c)
+		}
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			if depth == 0 {
+				buf = append(buf[:0], c)
+			}
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				emit(buf)
+				buf = buf[:0]
+			}
+			if depth < 0 {
+				depth = 0
+			}
+		}
+	}
+}
+
+func parseIntelBlock(raw []byte) *intelSample {
+	var blk struct {
+		Period struct {
+			Duration float64 `json:"duration"`
+		} `json:"period"`
+		Frequency struct {
+			Actual float64 `json:"actual"`
+		} `json:"frequency"`
+		RC6 struct {
+			Value float64 `json:"value"`
+		} `json:"rc6"`
+		Power struct {
+			GPU float64 `json:"GPU"`
+		} `json:"power"`
+		Engines map[string]struct {
+			Busy float64 `json:"busy"`
+		} `json:"engines"`
+	}
+	if json.Unmarshal(raw, &blk) != nil || blk.Engines == nil {
+		return nil
+	}
+	// Het eerste blok heeft een meetperiode van rond de 150 ms en staat altijd
+	// op nul, terwijl rc6 wél 0 is. Zonder deze grens rapporteert de GPU vlak
+	// na het starten van de monitor 100% belasting die er niet is.
+	if blk.Period.Duration < 300 {
+		return nil
+	}
+	s := &intelSample{freq: blk.Frequency.Actual, powerGPU: blk.Power.GPU}
+	for name, e := range blk.Engines {
+		s.engines = append(s.engines, GPUEngine{Name: name, Busy: e.Busy})
+		if e.Busy > s.util {
+			s.util = e.Busy
+		}
+	}
+	sort.Slice(s.engines, func(i, j int) bool { return s.engines[i].Name < s.engines[j].Name })
+	// Bewust géén rc6-fallback meer. "De GPU sliep niet, dus hij zal wel druk
+	// zijn" leverde bij het starten en stoppen van een taak een volle 100%
+	// op terwijl elke motor nul rapporteerde. De belasting is wat de motoren
+	// zeggen; is dat nul, dan is het nul.
+	return s
 }
 
 var intelTopPath struct {
@@ -236,91 +438,6 @@ func lookIntelTop() (string, bool) {
 		}
 	})
 	return intelTopPath.path, intelTopPath.ok
-}
-
-// parseIntelTop pakt het laatste volledige blok uit de uitvoer.
-// intel_gpu_top schrijft een array die nooit wordt afgesloten en waarvan de
-// blokken door komma's worden gescheiden; een json.Decoder loopt daarop vast.
-// Daarom knippen we de blokken zelf op haakjesniveau uit.
-func parseIntelTop(out []byte) *intelSample {
-	blocks := jsonObjects(string(out))
-	var last *intelSample
-	for _, raw := range blocks {
-		var blk struct {
-			Frequency struct {
-				Actual float64 `json:"actual"`
-			} `json:"frequency"`
-			RC6 struct {
-				Value float64 `json:"value"`
-			} `json:"rc6"`
-			Power struct {
-				GPU float64 `json:"GPU"`
-			} `json:"power"`
-			Engines map[string]struct {
-				Busy float64 `json:"busy"`
-			} `json:"engines"`
-		}
-		if json.Unmarshal([]byte(raw), &blk) != nil {
-			continue
-		}
-		sample := &intelSample{freq: blk.Frequency.Actual, powerGPU: blk.Power.GPU}
-		for name, e := range blk.Engines {
-			sample.engines = append(sample.engines, GPUEngine{Name: name, Busy: e.Busy})
-			if e.Busy > sample.util {
-				sample.util = e.Busy
-			}
-		}
-		sort.Slice(sample.engines, func(i, j int) bool {
-			return sample.engines[i].Name < sample.engines[j].Name
-		})
-		// rc6 is het percentage van de tijd dat de GPU sliep; 100 - rc6 is
-		// een goede totaalindicatie als geen enkele motor druk is.
-		if idle := blk.RC6.Value; idle > 0 && sample.util == 0 {
-			sample.util = 100 - idle
-			if sample.util < 0 {
-				sample.util = 0
-			}
-		}
-		last = sample
-	}
-	return last
-}
-
-// jsonObjects knipt alle complete { … }-blokken uit een tekst, met respect
-// voor haakjes binnen strings en escapes.
-func jsonObjects(s string) []string {
-	var out []string
-	depth, start := 0, -1
-	inString, escaped := false, false
-	for i, c := range s {
-		if inString {
-			switch {
-			case escaped:
-				escaped = false
-			case c == '\\':
-				escaped = true
-			case c == '"':
-				inString = false
-			}
-			continue
-		}
-		switch c {
-		case '"':
-			inString = true
-		case '{':
-			if depth == 0 {
-				start = i
-			}
-			depth++
-		case '}':
-			depth--
-			if depth == 0 && start >= 0 {
-				out = append(out, s[start:i+1])
-				start = -1
-			}
-		}
-	}
-	return out
 }
 
 // amdGPUs leest de AMD-sysfs. Werkt zonder extra tooling.

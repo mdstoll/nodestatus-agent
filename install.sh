@@ -226,25 +226,25 @@ else
 fi
 
 # ---------- 8. sudoers ----------
-# SMART on NVMe needs CAP_SYS_ADMIN. One pinned command through sudo is a far
-# narrower privilege than granting the agent that capability outright.
-if command -v smartctl >/dev/null; then
-  SMARTCTL="$(command -v smartctl)"
-  cat > "$SUDOERS" <<SUDO
-# Read SMART data only — no other privileges for $USER.
-$USER ALL=(root) NOPASSWD: $SMARTCTL -j -A -H -i /dev/sd[a-z], $SMARTCTL -j -A -H -i /dev/nvme[0-9]n[0-9], $SMARTCTL -j -A -H -i /dev/vd[a-z]
-SUDO
-  chmod 440 "$SUDOERS"
-  visudo -cf "$SUDOERS" >/dev/null 2>&1 && ok "sudoers rule for smartctl installed" \
-    || { rm -f "$SUDOERS"; warn "sudoers rule invalid, skipped (SMART stays empty)"; }
-fi
-# intel_gpu_top needs CAP_PERFMON, same trade-off.
-if command -v intel_gpu_top >/dev/null; then
-  IGT="$(command -v intel_gpu_top)"
-  echo "$USER ALL=(root) NOPASSWD: $IGT -J -s 600" > "${SUDOERS}-gpu"
-  chmod 440 "${SUDOERS}-gpu"
-  visudo -cf "${SUDOERS}-gpu" >/dev/null 2>&1 && ok "sudoers rule for intel_gpu_top installed" \
-    || { rm -f "${SUDOERS}-gpu"; warn "GPU sudoers rule invalid, skipped"; }
+# The agent prints the rules itself, with exactly the arguments it will use.
+# Writing them by hand here is how they drift: sudoers pins the arguments, so
+# one changed flag turns into "sudo: a password is required" and a metric that
+# silently stays at zero.
+#
+# SMART on NVMe needs CAP_SYS_ADMIN and intel_gpu_top needs CAP_PERFMON. One
+# pinned command each is far narrower than granting the agent those outright.
+if "$BIN" sudoers --user "$USER" > "$SUDOERS.tmp" 2>/dev/null && [ -s "$SUDOERS.tmp" ]; then
+  chmod 440 "$SUDOERS.tmp"
+  if visudo -cf "$SUDOERS.tmp" >/dev/null 2>&1; then
+    mv "$SUDOERS.tmp" "$SUDOERS"
+    rm -f "${SUDOERS}-gpu"   # older layout, superseded by the single file
+    ok "sudoers rules installed ($(grep -c NOPASSWD "$SUDOERS") commands)"
+  else
+    rm -f "$SUDOERS.tmp"; warn "generated sudoers rules were rejected by visudo, skipped"
+  fi
+else
+  rm -f "$SUDOERS.tmp"
+  inf "no optional tools that need sudo"
 fi
 
 # ---------- 9. CA + server certificate ----------

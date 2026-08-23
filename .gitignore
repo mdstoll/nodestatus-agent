@@ -6,7 +6,7 @@ ios/DerivedData/
 xcuserdata/
 
 # Door xcodegen gegenereerd uit project.yml
-ios/ServerInfo.xcodeproj/
+ios/NodeStatus.xcodeproj/
 
 # macOS
 .DS_Store
@@ -15,3 +15,8 @@ ios/ServerInfo.xcodeproj/
 *.pem
 *.key
 *.p12
+
+# Build helpers
+agent/validate
+agent/nsvalidate
+/tmp/

@@ -56,6 +56,9 @@ func main() {
 		case "devices":
 			cmdDevices()
 			return
+		case "sudoers":
+			cmdSudoers()
+			return
 		case "bootstrap":
 			cmdBootstrap()
 			return
@@ -88,6 +91,8 @@ COMMANDS
   devices list            List every paired device.
   devices revoke <id>     Revoke one device. Takes effect immediately, also on
                           connections that are already open.
+  sudoers                 Print the sudoers rules this agent needs, with the
+                          exact arguments it uses. The installer writes these.
   bootstrap               Create the CA and server certificate. The installer
                           does this; you rarely need it by hand.
   version                 Print the version.
