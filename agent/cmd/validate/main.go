@@ -149,6 +149,27 @@ func main() {
 	}
 	fmt.Printf("%s /etc/shadow via logs → %d (verwacht 403)\n", mark, st)
 
+	// SI_WATCH=<pad>:<n> pollt een endpoint n keer met een seconde ertussen.
+	// Handig om te zien of een waarde daadwerkelijk meebeweegt.
+	if w := os.Getenv("SI_WATCH"); w != "" {
+		parts := strings.SplitN(w, "|", 2)
+		path := parts[0]
+		n := 20
+		if len(parts) == 2 {
+			fmt.Sscanf(parts[1], "%d", &n)
+		}
+		for i := 0; i < n; i++ {
+			st, b := get(path)
+			line := strings.ReplaceAll(string(b), "\n", " ")
+			if len(line) > 200 {
+				line = line[:200]
+			}
+			fmt.Printf("%2ds  %3d  %s\n", i, st, line)
+			time.Sleep(time.Second)
+		}
+		return
+	}
+
 	if d := os.Getenv("SI_DUMP"); d != "" {
 		_, b := get(d)
 		var v any
