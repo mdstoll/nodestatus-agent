@@ -16,6 +16,10 @@ import (
 	"nodestatus/internal/tools"
 )
 
+func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.updates.Result())
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"ok": true, "version": s.version,

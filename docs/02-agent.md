@@ -125,7 +125,7 @@ expires after 397 days (see [07 §7.2](07-security.md)). In practice that is one
 ## 2.6 Installing and removing
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mdstoll/node-status/main/install.sh | sudo bash -s -- --with-extras
+curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash -s -- --with-extras
 ```
 
 The installer is idempotent and does: preflight (root, systemd, architecture, free port) →

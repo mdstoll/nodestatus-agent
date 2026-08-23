@@ -13,6 +13,7 @@ import (
 	"nodestatus/internal/config"
 	"nodestatus/internal/control"
 	"nodestatus/internal/pki"
+	"nodestatus/internal/selfupdate"
 )
 
 func stateDir() string {
@@ -210,4 +211,35 @@ func cmdSudoers() {
 	for _, r := range rules {
 		fmt.Println(r)
 	}
+}
+
+// cmdUpdate downloads the latest release and installs it in place. This is a
+// manual, explicit action — run by hand or from your own cron job — never
+// triggered remotely by the app. The app can only ever tell you an update
+// exists (via /v1/system); it cannot cause code to run on your server.
+func cmdUpdate() {
+	fmt.Printf("Current version: %s\n", version)
+	fmt.Println("Checking for a newer release…")
+	newVersion, err := selfupdate.Apply(version)
+	if err != nil {
+		if selfupdate.IsAlreadyCurrent(err) {
+			fmt.Println("✔ Already up to date.")
+			return
+		}
+		fmt.Fprintln(os.Stderr, "✖", err)
+		os.Exit(1)
+	}
+	fmt.Printf("✔ Installed %s (was %s)\n", newVersion, version)
+	if os.Geteuid() != 0 {
+		fmt.Println("  Not running as root — restart the service yourself:")
+		fmt.Println("    sudo systemctl restart nodestatus-agent")
+		return
+	}
+	fmt.Println("Restarting the service…")
+	if err := selfupdate.RestartService(); err != nil {
+		fmt.Fprintln(os.Stderr, "✖ restart failed:", err)
+		fmt.Println("  Restart it yourself: sudo systemctl restart nodestatus-agent")
+		os.Exit(1)
+	}
+	fmt.Println("✔ Done.")
 }

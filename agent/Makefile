@@ -1,4 +1,4 @@
-VERSION ?= 0.1.1
+VERSION ?= 0.2.0
 LDFLAGS := -s -w -X main.version=$(VERSION)
 DIST    := dist
 
@@ -10,12 +10,15 @@ build:
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(DIST)/nodestatus-agent ./cmd/nodestatus-agent
 
 # install.sh staat ook in de repo-root zodat de curl-one-liner werkt.
+# arm = GOARM 6, which runs on everything from a Pi Zero/1 (armv6) up through
+# a Pi 3/4 in 32-bit mode (armv7) — one build covers both at the cost of not
+# using armv7-only FPU instructions, which this workload never needed anyway.
 release: clean
 	@cp packaging/install.sh ../install.sh
-	@for arch in amd64 arm64; do \
+	@for arch in amd64 arm64 arm; do \
 	  echo "→ linux/$$arch"; \
 	  mkdir -p $(DIST)/$$arch; \
-	  CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -ldflags "$(LDFLAGS)" \
+	  GOARM=6 CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -ldflags "$(LDFLAGS)" \
 	    -o $(DIST)/$$arch/nodestatus-agent ./cmd/nodestatus-agent; \
 	  cp packaging/install.sh packaging/uninstall.sh packaging/nodestatus-agent.service $(DIST)/$$arch/; \
 	  tar -czf $(DIST)/nodestatus-agent_linux_$$arch.tar.gz -C $(DIST)/$$arch .; \

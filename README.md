@@ -17,13 +17,13 @@ iPhone (SwiftUI)  ──mutual TLS 1.3──▶  nodestatus-agent  ──▶  /p
 ## Install the agent
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mdstoll/node-status/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash
 ```
 
 Add `--with-extras` for SMART, WHOIS, DNS, QR codes and GPU metrics:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mdstoll/node-status/main/install.sh | sudo bash -s -- --with-extras
+curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash -s -- --with-extras
 ```
 
 The installer prints a pairing code and a QR code. Scan it in the app and you are done.
