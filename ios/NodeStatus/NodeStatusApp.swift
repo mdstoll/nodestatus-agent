@@ -9,7 +9,7 @@ struct NodeStatusApp: App {
         WindowGroup {
             RootView()
                 .environment(app)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(app.prefs.appearance.colorScheme)
                 .tint(Theme.C.accent)
                 .onChange(of: scenePhase) { _, phase in
                     // De stream stopt in de achtergrond: iOS zou hem toch

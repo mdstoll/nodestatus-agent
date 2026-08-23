@@ -2,18 +2,26 @@ import Foundation
 import SwiftUI
 import Observation
 
-/// Taalkeuze. Engels is de standaard; Nederlands wordt alleen aangeboden als
-/// het toestel zelf op Nederlands staat — anders is het een optie die niemand
-/// die hem ziet ook wil.
+/// Language choice. `system` follows the device language (falling back to
+/// English for anything we don't have a translation for); `dutch` is only
+/// offered as an explicit option when the device itself is set to Dutch —
+/// otherwise it's a choice nobody who sees it would want.
 enum AppLanguage: String, CaseIterable, Sendable {
+    case system = "system"
     case english = "en"
     case dutch = "nl"
 
     var label: String {
         switch self {
+        case .system: "System"
         case .english: "English"
         case .dutch: "Nederlands"
         }
+    }
+
+    /// Only the languages worth showing in the picker on this device.
+    static var offered: [AppLanguage] {
+        Localizer.systemIsDutch ? [.system, .english, .dutch] : [.system, .english]
     }
 }
 
@@ -22,34 +30,42 @@ enum AppLanguage: String, CaseIterable, Sendable {
 final class Localizer {
     static let shared = Localizer()
 
-    /// True als de systeemtaal Nederlands is. Alleen dan tonen we de keuze.
-    static let systemIsDutch: Bool = {
+    /// True if the device's own language is Dutch. Not actor-isolated: it's
+    /// a pure computation with no shared state, and AppLanguage.offered
+    /// (used from a synchronous enum context) needs to read it too.
+    nonisolated static let systemIsDutch: Bool = {
         Locale.preferredLanguages.first?.hasPrefix("nl") ?? false
     }()
 
+    /// What's actually stored in Settings — may be `.system`.
     var language: AppLanguage {
         didSet { UserDefaults.standard.set(language.rawValue, forKey: "appLanguage") }
     }
 
+    /// What T(_:_:) actually uses: `.system` resolves to Dutch only when the
+    /// device is Dutch, English otherwise. Never resolves to Dutch on a
+    /// device that isn't Dutch, even if that was somehow stored previously.
+    var effective: AppLanguage {
+        switch language {
+        case .system: Self.systemIsDutch ? .dutch : .english
+        case .dutch: Self.systemIsDutch ? .dutch : .english
+        case .english: .english
+        }
+    }
+
     private init() {
         let stored = UserDefaults.standard.string(forKey: "appLanguage")
-        if let stored, let l = AppLanguage(rawValue: stored), l != .dutch || Self.systemIsDutch {
-            language = l
-        } else {
-            // Standaard Engels, ook op een Nederlands toestel: dat is de taal
-            // waarin de meeste servertermen sowieso staan.
-            language = .english
-        }
+        language = stored.flatMap(AppLanguage.init(rawValue:)) ?? .system
     }
 }
 
-/// Vertaalt één string. Beide talen staan naast elkaar op de plek waar de
-/// tekst gebruikt wordt; dat leest prettiger dan losse sleutelbestanden en
-/// werkt zonder omwegen met string-interpolatie.
+/// Translates one string. Both languages sit side by side at the call site
+/// rather than in separate string-table files — reads better and works
+/// naturally with string interpolation.
 ///
-/// Omdat dit `Localizer.shared.language` leest, hertekent SwiftUI vanzelf
-/// zodra de taal wijzigt.
+/// Reads `Localizer.shared.effective`, so SwiftUI redraws automatically the
+/// moment the language (or the resolved system language) changes.
 @MainActor
 func T(_ english: String, _ dutch: String) -> String {
-    Localizer.shared.language == .dutch ? dutch : english
+    Localizer.shared.effective == .dutch ? dutch : english
 }

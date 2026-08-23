@@ -49,49 +49,12 @@ struct HardwareView: View {
                                      : "\(Fmt.bytes(s.memory.swapUsed)) / \(Fmt.bytes(s.memory.swapTotal))")
                     }
                 }
-
-                NavigationLink { SmartDetailView() } label: {
-                    linkCard(T("Storage & SMART", "Opslag & SMART"), "internaldrive.fill", Theme.C.magenta,
-                             T("Disks, partitions and health", "Schijven, partities en gezondheid"))
-                }.buttonStyle(.plain)
-
-                NavigationLink { NetworkDetailView() } label: {
-                    linkCard(T("Network interfaces", "Netwerkinterfaces"), "cable.connector", Theme.C.green,
-                             T("MAC, MTU, addresses, gateway and DNS", "MAC, MTU, adressen, gateway en DNS"))
-                }.buttonStyle(.plain)
-
-                NavigationLink { SensorsDetailView() } label: {
-                    linkCard(T("Sensors", "Sensoren"), "sensor.fill", Theme.C.teal,
-                             T("Temperature, fans, voltage and power", "Temperatuur, fans, spanning en vermogen"))
-                }.buttonStyle(.plain)
-
-                if sys.hasGPU || !(app.latest?.gpu.isEmpty ?? true) {
-                    NavigationLink { GPUDetailView() } label: {
-                        linkCard("GPU", "cpu.fill", Theme.C.purple, T("Load, memory and temperature", "Belasting, geheugen en temperatuur"))
-                    }.buttonStyle(.plain)
-                }
             } else {
                 ProgressView().frame(maxWidth: .infinity, minHeight: 200)
             }
         }
         .navigationTitle(T("Hardware", "Hardware"))
         .navigationBarTitleDisplayMode(.large)
-    }
-
-    private func linkCard(_ title: String, _ symbol: String, _ tint: Color, _ subtitle: String) -> some View {
-        Card {
-            HStack(spacing: 12) {
-                IconTile(symbol: symbol, color: tint)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline).foregroundStyle(Theme.C.text)
-                    Text(subtitle).font(.caption).foregroundStyle(Theme.C.textTertiary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Theme.C.textTertiary)
-            }
-        }
     }
 }
 
@@ -120,6 +83,26 @@ struct StorageDetailView: View {
                     }
                 }
             }
+
+            NavigationLink { SmartDetailView() } label: {
+                Card {
+                    HStack(spacing: 12) {
+                        IconTile(symbol: "heart.text.square.fill", color: Theme.C.magenta)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(T("Disk health (SMART)", "Schijfgezondheid (SMART)"))
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(Theme.C.text)
+                            Text(T("Model, temperature, power-on hours, wear", "Model, temperatuur, bedrijfsuren, slijtage"))
+                                .font(.caption)
+                                .foregroundStyle(Theme.C.textTertiary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.C.textTertiary)
+                    }
+                }
+            }.buttonStyle(.plain)
 
             ForEach(current.localStorage) { v in volumeCard(v) }
 

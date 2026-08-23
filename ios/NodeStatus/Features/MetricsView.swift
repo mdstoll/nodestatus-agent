@@ -186,23 +186,30 @@ struct MetricsView: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.M.cardGap),
                             GridItem(.flexible(), spacing: Theme.M.cardGap)],
                   spacing: Theme.M.cardGap) {
-            MetricTile(title: "CPU", symbol: "cpu.fill", tint: Theme.C.blue,
-                       gradient: Theme.G.cpu, fraction: s.cpu.total / 100,
-                       value: Fmt.percent(s.cpu.total))
+            NavigationLink { CPUInfoView() } label: {
+                MetricTile(title: "CPU", symbol: "cpu.fill", tint: Theme.C.blue,
+                           gradient: Theme.G.cpu, fraction: s.cpu.total / 100,
+                           value: Fmt.percent(s.cpu.total), isLink: true)
+            }.buttonStyle(.plain)
 
-            MetricTile(title: "RAM", symbol: "memorychip.fill", tint: Theme.C.blue,
-                       gradient: Theme.G.ram, fraction: s.memory.percent / 100,
-                       value: Fmt.percent(s.memory.percent),
-                       caption: "\(Fmt.bytes(s.memory.used, binary: app.prefs.binaryUnits)) / \(Fmt.bytes(s.memory.total, binary: app.prefs.binaryUnits))")
+            NavigationLink { RAMDetailView() } label: {
+                MetricTile(title: "RAM", symbol: "memorychip.fill", tint: Theme.C.blue,
+                           gradient: Theme.G.ram, fraction: s.memory.percent / 100,
+                           value: Fmt.percent(s.memory.percent),
+                           caption: "\(Fmt.bytes(s.memory.used, binary: app.prefs.binaryUnits)) / \(Fmt.bytes(s.memory.total, binary: app.prefs.binaryUnits))",
+                           isLink: true)
+            }.buttonStyle(.plain)
 
             NavigationLink { StorageDetailView(sample: s) } label: {
                 storageTile(s)
             }.buttonStyle(.plain)
 
-            MetricTile(title: "Load", symbol: "gauge.with.dots.needle.50percent",
-                       tint: Theme.C.green, gradient: Theme.G.load,
-                       fraction: loadFraction(s), value: String(format: "%.2f", s.cpu.load.first ?? 0),
-                       caption: s.cpu.loadShort)
+            NavigationLink { LoadDetailView() } label: {
+                MetricTile(title: "Load", symbol: "gauge.with.dots.needle.50percent",
+                           tint: Theme.C.green, gradient: Theme.G.load,
+                           fraction: loadFraction(s), value: String(format: "%.2f", s.cpu.load.first ?? 0),
+                           caption: s.cpu.loadShort, isLink: true)
+            }.buttonStyle(.plain)
         }
     }
 
@@ -215,6 +222,9 @@ struct MetricsView: View {
     private func storageTile(_ s: Sample) -> some View {
         let vols = s.localStorage
         return Card(padding: 14) {
+            // Wrapped in a fixed-height frame further down so this tile
+            // matches CPU/RAM/Load exactly, whether or not the "N volumes"
+            // line is present.
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     IconTile(symbol: "internaldrive.fill", color: Theme.C.magenta)
@@ -251,6 +261,7 @@ struct MetricsView: View {
                 }
             }
         }
+        .frame(height: Theme.M.metricTileHeight)
     }
 
     private func segments(_ vols: [Sample.Storage], total: UInt64) -> [SegmentedGaugeBar.Segment] {
@@ -378,7 +389,7 @@ struct MetricsView: View {
 
     // MARK: - Sensoren
 
-    @State private var sensorsExpanded = true
+    @State private var sensorsExpanded = false
 
     private func sensorsSection(_ s: Sample) -> some View {
         VStack(alignment: .leading, spacing: 12) {

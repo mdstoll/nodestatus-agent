@@ -39,29 +39,6 @@ struct ToolsView: View {
                 Text(T("Every tool runs on the selected server.", "Alle tools draaien op de geselecteerde server."))
             }
 
-            Section(T("Network", "Netwerk")) {
-                ToolRow(title: "Network Speed", symbol: "speedometer", tint: Theme.C.cyan,
-                        subtitle: speedtestSubtitle) { SpeedtestView() }
-                ToolRow(title: "Ping", symbol: "dot.radiowaves.left.and.right",
-                        tint: Theme.C.blue) { PingView() }
-                ToolRow(title: "DNS Query", symbol: "globe", tint: Theme.C.blue) { DNSView() }
-                ToolRow(title: "Traceroute", symbol: "arrow.triangle.turn.up.right.diamond.fill",
-                        tint: Theme.C.teal) { TracerouteView() }
-                ToolRow(title: "WHOIS", symbol: "magnifyingglass.circle.fill",
-                        tint: Theme.C.orange) { WhoisView() }
-            }
-
-            Section(T("Hardware", "Hardware")) {
-                ToolRow(title: "CPU Information", symbol: "cpu.fill", tint: Theme.C.magenta) { CPUInfoView() }
-                ToolRow(title: T("Sensors", "Sensoren"), symbol: "sensor.fill", tint: Theme.C.teal) { SensorsDetailView() }
-                ToolRow(title: T("Storage & SMART", "Opslag & SMART"), symbol: "internaldrive.fill",
-                        tint: Theme.C.magenta) { SmartDetailView() }
-                ToolRow(title: T("Network interfaces", "Netwerkinterfaces"), symbol: "cable.connector",
-                        tint: Theme.C.green) { NetworkDetailView() }
-                ToolRow(title: T("Hardware overview", "Hardware-overzicht"), symbol: "server.rack",
-                        tint: Theme.C.indigo) { HardwareView() }
-            }
-
             Section(T("System", "Systeem")) {
                 ToolRow(title: "Log Analyzer", symbol: "doc.text.magnifyingglass",
                         tint: Theme.C.blue) { LogAnalyzerView() }
@@ -72,6 +49,35 @@ struct ToolsView: View {
                 ToolRow(title: "Locale & Region", symbol: "globe.europe.africa.fill",
                         tint: Theme.C.blue) { LocaleView() }
                 ToolRow(title: "Device Uptime", symbol: "clock.fill", tint: Theme.C.gray) { UptimeView() }
+            }
+
+            Section(T("Hardware", "Hardware")) {
+                ToolRow(title: T("Hardware overview", "Hardware-overzicht"), symbol: "server.rack",
+                        tint: Theme.C.indigo) { HardwareView() }
+                ToolRow(title: "CPU Information", symbol: "cpu.fill", tint: Theme.C.magenta) { CPUInfoView() }
+                ToolRow(title: T("Network interfaces", "Netwerkinterfaces"), symbol: "cable.connector",
+                        tint: Theme.C.green) { NetworkDetailView() }
+                ToolRow(title: T("Storage & SMART", "Opslag & SMART"), symbol: "internaldrive.fill",
+                        tint: Theme.C.magenta) { SmartDetailView() }
+                ToolRow(title: T("Sensors", "Sensoren"), symbol: "sensor.fill", tint: Theme.C.teal) { SensorsDetailView() }
+                // Hidden entirely when the server reports no GPU — a VPS
+                // without passthrough, or a vendor we don't recognise yet,
+                // shouldn't show a menu item that only leads to an empty page.
+                if !(app.latest?.gpu.isEmpty ?? true) {
+                    ToolRow(title: "GPU", symbol: "cpu.fill", tint: Theme.C.purple) { GPUDetailView() }
+                }
+            }
+
+            Section(T("Network", "Netwerk")) {
+                ToolRow(title: "Network Speed", symbol: "speedometer", tint: Theme.C.cyan,
+                        subtitle: speedtestSubtitle) { SpeedtestView() }
+                ToolRow(title: "Ping", symbol: "dot.radiowaves.left.and.right",
+                        tint: Theme.C.blue) { PingView() }
+                ToolRow(title: "DNS Query", symbol: "globe", tint: Theme.C.blue) { DNSView() }
+                ToolRow(title: "Traceroute", symbol: "arrow.triangle.turn.up.right.diamond.fill",
+                        tint: Theme.C.teal) { TracerouteView() }
+                ToolRow(title: "WHOIS", symbol: "magnifyingglass.circle.fill",
+                        tint: Theme.C.orange) { WhoisView() }
             }
         }
         .listStyle(.insetGrouped)

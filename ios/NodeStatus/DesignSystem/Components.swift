@@ -118,6 +118,9 @@ struct MetricTile: View {
     let fraction: Double
     let value: String
     var caption: String?
+    /// Shows a chevron to signal that tapping this tile goes somewhere.
+    /// Purely visual — the NavigationLink wrapping happens at the call site.
+    var isLink: Bool = false
 
     var body: some View {
         Card(padding: 14) {
@@ -127,6 +130,12 @@ struct MetricTile: View {
                     Text(title)
                         .font(.headline)
                         .foregroundStyle(Theme.C.text)
+                    if isLink {
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Theme.C.textTertiary)
+                    }
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     GaugeBar(fraction: fraction, gradient: gradient)
@@ -153,6 +162,7 @@ struct MetricTile: View {
                 }
             }
         }
+        .frame(height: Theme.M.metricTileHeight)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title), \(value)")
     }
@@ -293,5 +303,65 @@ extension View {
     /// Tab rekent die niet mee. contentMargins wél.
     func accessoryInset(_ height: CGFloat = 80) -> some View {
         contentMargins(.bottom, height, for: .scrollContent)
+    }
+}
+
+/// A copyable shell command in a card, used everywhere the user needs to run
+/// something on the server: pairing, updating, uninstalling.
+struct CommandBox: View {
+    let command: String
+    @State private var copied = false
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(command)
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(Theme.C.text)
+                    .textSelection(.enabled)
+                Button {
+                    UIPasteboard.general.string = command
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    copied = true
+                    Task {
+                        try? await Task.sleep(for: .seconds(1.6))
+                        copied = false
+                    }
+                } label: {
+                    Label(copied ? T("Copied", "Gekopieerd") : T("Copy command", "Kopieer commando"),
+                          systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(.footnote)
+                        .foregroundStyle(copied ? Theme.C.ok : Theme.C.accent)
+                        .contentTransition(.symbolEffect)
+                }
+                .animation(.easeOut(duration: 0.2), value: copied)
+            }
+        }
+    }
+}
+
+/// Small (i) button that reveals an explanation in a popover — used where a
+/// setting's effect isn't obvious from its label alone.
+struct InfoButton: View {
+    let text: String
+    @State private var showing = false
+
+    var body: some View {
+        Button {
+            showing = true
+        } label: {
+            Image(systemName: "info.circle")
+                .foregroundStyle(Theme.C.textTertiary)
+                .font(.footnote)
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showing) {
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(Theme.C.text)
+                .padding()
+                .frame(idealWidth: 280)
+                .presentationCompactAdaptation(.popover)
+        }
     }
 }

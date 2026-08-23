@@ -1,29 +1,34 @@
 import SwiftUI
 
-/// Designtokens. Alles wat kleur, ruimte of typografie is, staat hier — zodat
-/// een wijziging op één plek doorwerkt in het hele scherm.
+/// Design tokens. Everything about colour, spacing or type lives here, so a
+/// change in one place carries through the whole app.
+///
+/// Colours are dynamic (`UIColor { trait in ... }`), so they follow whatever
+/// appearance is active — including the app's own Dark/Light/System setting,
+/// which is applied at the root via `.preferredColorScheme`.
 enum Theme {
 
-    // MARK: - Kleuren
+    // MARK: - Colours
 
     enum C {
-        static let base          = Color(hex: 0x000000)
-        static let card          = Color(hex: 0x1C1C1E)
-        static let cardElevated  = Color(hex: 0x2C2C2E)
-        static let hairline      = Color.white.opacity(0.08)
+        static let base          = dyn(light: 0xF2F2F7, dark: 0x000000)
+        static let card          = dyn(light: 0xFFFFFF, dark: 0x1C1C1E)
+        static let cardElevated  = dyn(light: 0xF2F2F7, dark: 0x2C2C2E)
+        static let hairline      = dynOpacity(light: (0x000000, 0.08), dark: (0xFFFFFF, 0.08))
 
-        static let text          = Color.white
-        static let textSecondary = Color(hex: 0xEBEBF5).opacity(0.62)
-        static let textTertiary  = Color(hex: 0xEBEBF5).opacity(0.32)
+        static let text          = dyn(light: 0x000000, dark: 0xFFFFFF)
+        static let textSecondary = dynOpacity(light: (0x3C3C43, 0.60), dark: (0xEBEBF5, 0.62))
+        static let textTertiary  = dynOpacity(light: (0x3C3C43, 0.30), dark: (0xEBEBF5, 0.32))
 
         static let accent        = Color(hex: 0x0A84FF)
-        static let ok            = Color(hex: 0x30D158)
-        static let warn          = Color(hex: 0xFF9F0A)
-        static let crit          = Color(hex: 0xFF375F)
+        static let ok            = dyn(light: 0x248A3D, dark: 0x30D158)
+        static let warn          = dyn(light: 0xC77400, dark: 0xFF9F0A)
+        static let crit          = dyn(light: 0xD70015, dark: 0xFF375F)
 
-        static let track         = Color.white.opacity(0.10)
+        static let track         = dynOpacity(light: (0x000000, 0.08), dark: (0xFFFFFF, 0.10))
 
-        // Iconentegels
+        // Icon tiles — these stay identical in both appearances; they carry
+        // their own contrast via a 20% fill regardless of background.
         static let blue    = Color(hex: 0x0A84FF)
         static let cyan    = Color(hex: 0x32D0FF)
         static let magenta = Color(hex: 0xFF2D9B)
@@ -39,9 +44,9 @@ enum Theme {
 
     // MARK: - Gradients
     //
-    // De gradient loopt bewust over de vólle breedte van de balk en niet over
-    // het gevulde deel: anders verandert de kleur mee met de vulling en ziet
-    // 22% er anders uit dan 80%.
+    // The gradient runs across the full width of the bar, not the filled
+    // portion — otherwise the colour would shift with the fill and 22% would
+    // look different from 80%. Gradients are identical in both appearances.
 
     enum G {
         static let cpu     = LinearGradient(colors: [C.blue, C.cyan], startPoint: .leading, endPoint: .trailing)
@@ -58,7 +63,7 @@ enum Theme {
         }
     }
 
-    // MARK: - Maatvoering
+    // MARK: - Metrics
 
     enum M {
         static let cardRadius: CGFloat = 20
@@ -69,6 +74,49 @@ enum Theme {
         static let screenMargin: CGFloat = 16
         static let barHeight: CGFloat = 8
         static let iconTile: CGFloat = 32
+        /// Shared height for the CPU/RAM/Storage/Load tiles on Metrics, so all
+        /// four are the same size regardless of how many lines their content
+        /// happens to need.
+        static let metricTileHeight: CGFloat = 150
+    }
+
+    /// A colour that is one fixed value in light mode and another in dark —
+    /// resolved by the system (or our own override) at draw time.
+    private static func dyn(light: UInt32, dark: UInt32) -> Color {
+        Color(uiColor: UIColor { trait in
+            trait.userInterfaceStyle == .dark ? UIColor(Color(hex: dark)) : UIColor(Color(hex: light))
+        })
+    }
+
+    private static func dynOpacity(light: (UInt32, Double), dark: (UInt32, Double)) -> Color {
+        Color(uiColor: UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? UIColor(Color(hex: dark.0).opacity(dark.1))
+                : UIColor(Color(hex: light.0).opacity(light.1))
+        })
+    }
+}
+
+/// Dark / Light / System, chosen in Settings and applied at the app root.
+enum AppearanceMode: String, CaseIterable, Sendable {
+    case system, light, dark
+
+    var label: String {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    /// nil means "follow the system", which is exactly what
+    /// `.preferredColorScheme(nil)` does.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
     }
 }
 
@@ -83,7 +131,7 @@ enum Status: String, Codable, Sendable {
         }
     }
 
-    /// Kleur is nooit de enige informatiedrager.
+    /// Colour is never the only carrier of information.
     var symbol: String {
         switch self {
         case .ok: "checkmark.circle.fill"

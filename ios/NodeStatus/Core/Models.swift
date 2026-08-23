@@ -585,3 +585,10 @@ struct APIError: Codable, Sendable, Error, LocalizedError {
     var error: Body
     var errorDescription: String? { error.message }
 }
+
+struct UpdateCheckResult: Codable, Sendable {
+    var current: String
+    var latest: String?
+    var releaseUrl: String?
+    var available: Bool
+}

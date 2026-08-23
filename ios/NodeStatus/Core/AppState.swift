@@ -198,6 +198,7 @@ final class Preferences {
     var maskSensitive = true
     var warnBeforeSpeedtest = true
     var historyWindow = 60
+    var appearance: AppearanceMode = .dark
 
     func load() {
         let d = UserDefaults.standard
@@ -207,6 +208,9 @@ final class Preferences {
         maskSensitive = d.object(forKey: "maskSensitive") as? Bool ?? true
         warnBeforeSpeedtest = d.object(forKey: "warnBeforeSpeedtest") as? Bool ?? true
         historyWindow = d.object(forKey: "historyWindow") as? Int ?? 60
+        // Existing installs had no appearance setting and were dark-only;
+        // keep that look rather than switching everyone to System on update.
+        appearance = AppearanceMode(rawValue: d.string(forKey: "appearance") ?? "dark") ?? .dark
     }
 
     func save() {
@@ -217,5 +221,6 @@ final class Preferences {
         d.set(maskSensitive, forKey: "maskSensitive")
         d.set(warnBeforeSpeedtest, forKey: "warnBeforeSpeedtest")
         d.set(historyWindow, forKey: "historyWindow")
+        d.set(appearance.rawValue, forKey: "appearance")
     }
 }
