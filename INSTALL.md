@@ -26,7 +26,7 @@ Needs Go 1.24+ (`brew install go`) and nothing else.
 The short way, straight from GitHub:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mdstoll/node-status/main/install.sh | sudo bash -s -- --with-extras
+curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash -s -- --with-extras
 ```
 
 Or from a tarball you built yourself:

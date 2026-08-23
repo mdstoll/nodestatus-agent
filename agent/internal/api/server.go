@@ -16,6 +16,7 @@ import (
 	"nodestatus/internal/collect"
 	"nodestatus/internal/config"
 	"nodestatus/internal/pki"
+	"nodestatus/internal/selfupdate"
 	"nodestatus/internal/store"
 	"nodestatus/internal/tools"
 )
@@ -26,6 +27,7 @@ type Server struct {
 	store   *store.Store
 	sampler *collect.Sampler
 	jobs    *tools.Runner
+	updates *selfupdate.Checker
 	version string
 	caps    []string
 	log     *slog.Logger
@@ -37,9 +39,9 @@ type Server struct {
 	rl   map[string]*bucket
 }
 
-func New(cfg *config.Config, ca *pki.CA, st *store.Store, sm *collect.Sampler, version string, caps []string, log *slog.Logger) *Server {
+func New(cfg *config.Config, ca *pki.CA, st *store.Store, sm *collect.Sampler, updates *selfupdate.Checker, version string, caps []string, log *slog.Logger) *Server {
 	s := &Server{
-		cfg: cfg, ca: ca, store: st, sampler: sm,
+		cfg: cfg, ca: ca, store: st, sampler: sm, updates: updates,
 		jobs: tools.NewRunner(), version: version, caps: caps, log: log,
 		rl: map[string]*bucket{},
 	}
@@ -115,6 +117,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /v1/health", auth(s.handleHealth))
 	mux.Handle("GET /v1/system", auth(s.handleSystem))
+	mux.Handle("GET /v1/update", auth(s.handleUpdateCheck))
 	mux.Handle("GET /v1/metrics", auth(s.handleMetrics))
 	mux.Handle("GET /v1/stream", auth(s.handleStream))
 

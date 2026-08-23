@@ -21,7 +21,7 @@ struct PairServerView: View {
     @State private var code = ""
     @State private var fingerprint = ""
 
-    private let installCommand = "curl -fsSL https://raw.githubusercontent.com/mdstoll/node-status/main/install.sh | sudo bash"
+    private let installCommand = "curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash"
 
     var body: some View {
         NavigationStack {

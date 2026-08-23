@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Installs the Node Status agent. Idempotent: safe to run again.
 #
-#   curl -fsSL https://raw.githubusercontent.com/mdstoll/node-status/main/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash
 #
 # or, from an unpacked release tarball:
 #
 #   sudo ./install.sh --with-extras
 set -euo pipefail
 
-REPO=mdstoll/node-status
+REPO=mdstoll/nodestatus-agent
 BIN=/usr/local/bin/nodestatus-agent
 ETC=/etc/nodestatus-agent
 STATE=/var/lib/nodestatus-agent
@@ -68,7 +68,12 @@ command -v systemctl >/dev/null || die "systemd is required"
 case "$(uname -m)" in
   x86_64|amd64) ARCH=amd64;;
   aarch64|arm64) ARCH=arm64;;
-  *) die "unsupported architecture $(uname -m)";;
+  armv6l|armv7l|armv7|arm) ARCH=arm;;
+  *) die "unsupported architecture $(uname -m) — no release is published for it.
+  The agent is a single static Go binary; if you can cross-compile it yourself
+  ('cd agent && GOOS=linux GOARCH=<arch> go build ./cmd/nodestatus-agent'),
+  drop it next to this script and re-run. Otherwise please open an issue:
+  https://github.com/mdstoll/nodestatus-agent/issues";;
 esac
 ok "preflight ($ARCH, $(. /etc/os-release && echo "$PRETTY_NAME"))"
 
@@ -142,9 +147,11 @@ for cand in "$SRC_DIR/uninstall.sh" "$(dirname "$SRC_BIN")/uninstall.sh"; do
   [ -f "$cand" ] && UNINST_SRC="$cand" && break
 done
 if [ -n "$UNINST_SRC" ]; then
-  install -m 0755 "$UNINST_SRC" /usr/local/bin/nodestatus-uninstall
-  ln -sf /usr/local/bin/nodestatus-uninstall /usr/local/bin/uninstall.sh
-  ok "uninstaller installed (/usr/local/bin/nodestatus-uninstall)"
+  install -m 0755 "$UNINST_SRC" /usr/local/bin/nodestatus-uninstall.sh
+  # Old name, kept quietly for anyone who already scripted against it.
+  ln -sf /usr/local/bin/nodestatus-uninstall.sh /usr/local/bin/nodestatus-uninstall
+  rm -f /usr/local/bin/uninstall.sh
+  ok "uninstaller installed (/usr/local/bin/nodestatus-uninstall.sh)"
 fi
 
 install -d -m 0750 -o "$USER" -g "$USER" "$ETC" "$ETC/ca" "$STATE"

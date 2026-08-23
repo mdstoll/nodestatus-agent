@@ -21,6 +21,7 @@ import (
 	"nodestatus/internal/config"
 	"nodestatus/internal/control"
 	"nodestatus/internal/pki"
+	"nodestatus/internal/selfupdate"
 	"nodestatus/internal/store"
 	"nodestatus/internal/tools"
 )
@@ -59,6 +60,9 @@ func main() {
 		case "sudoers":
 			cmdSudoers()
 			return
+		case "update":
+			cmdUpdate()
+			return
 		case "bootstrap":
 			cmdBootstrap()
 			return
@@ -93,6 +97,8 @@ COMMANDS
                           connections that are already open.
   sudoers                 Print the sudoers rules this agent needs, with the
                           exact arguments it uses. The installer writes these.
+  update                  Download and install the latest release, then
+                          restart the service. Must be run as root.
   bootstrap               Create the CA and server certificate. The installer
                           does this; you rarely need it by hand.
   version                 Print the version.
@@ -107,7 +113,7 @@ SERVICE
   journalctl -u nodestatus-agent -f
 
 DOCS
-  https://github.com/mdstoll/node-status
+  https://github.com/mdstoll/nodestatus-agent
 `, version, defaultConfigPath())
 }
 
@@ -150,7 +156,8 @@ func run() {
 		os.Exit(1)
 	}
 	sampler := collect.NewSampler(cfg.HistorySize, cfg.SampleHz, cfg.Features.GPU)
-	srv := api.New(cfg, ca, st, sampler, version, caps, log)
+	updateChecker := selfupdate.NewChecker(version)
+	srv := api.New(cfg, ca, st, sampler, updateChecker, version, caps, log)
 
 	httpSrv := &http.Server{
 		Handler:           srv.Handler(),
@@ -221,7 +228,7 @@ func run() {
 }
 
 func capabilities(cfg *config.Config, found map[string]string) []string {
-	caps := []string{"metrics", "stream", "sensors", "processes"}
+	caps := []string{"metrics", "stream", "sensors", "processes", "update"}
 	add := func(c string) { caps = append(caps, c) }
 	if cfg.Features.SMART && found["smartctl"] != "" {
 		add("smart")
