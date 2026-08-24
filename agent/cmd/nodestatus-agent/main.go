@@ -57,6 +57,9 @@ func main() {
 		case "devices":
 			cmdDevices()
 			return
+		case "doctor":
+			cmdDoctor()
+			return
 		case "sudoers":
 			cmdSudoers()
 			return
@@ -139,8 +142,12 @@ func run() {
 	// HOME voor child-processen: de speedtest-CLI heeft er een nodig en
 	// bewaart er zijn licentie-acceptatie.
 	tools.SetHome(cfg.StateDir)
-	found := tools.Discover()
-	caps := capabilities(cfg, found)
+	tools.Discover()
+	gpuCount := 0
+	if cfg.Features.GPU {
+		gpuCount = len(collect.DetectGPUs())
+	}
+	caps := capabilities(cfg, gpuCount)
 
 	// De CA en het servercertificaat worden bij installatie aangemaakt
 	// ('nodestatus-agent bootstrap'). Tijdens het draaien is /etc read-only
@@ -227,39 +234,34 @@ func run() {
 	_ = httpSrv.Shutdown(ctx)
 }
 
-func capabilities(cfg *config.Config, found map[string]string) []string {
-	caps := []string{"metrics", "stream", "sensors", "processes", "update"}
+// capabilities meldt alleen wat op déze machine ook echt werkt. De optionele
+// modules worden functioneel getest (tools.ProbeAll) in plaats van alleen op
+// aanwezigheid van het binary: dat laatste liet de app tools tonen die
+// gegarandeerd faalden — smartctl zonder sudoers-regel, een speedtest-CLI voor
+// de verkeerde architectuur. Wat hier niet in de lijst staat, verbergt de app.
+func capabilities(cfg *config.Config, gpus int) []string {
+	caps := []string{"metrics", "stream", "processes", "update"}
 	add := func(c string) { caps = append(caps, c) }
-	if cfg.Features.SMART && found["smartctl"] != "" {
-		add("smart")
+
+	if tools.HasSensors() {
+		add("sensors")
 	}
-	if cfg.Features.GPU && found["nvidia-smi"] != "" {
-		add("gpu.nvidia")
+	if cfg.Features.GPU && gpus > 0 {
+		add("gpu")
 	}
-	if cfg.Features.Speedtest {
-		if found["speedtest"] != "" {
-			add("speedtest.ookla")
-		} else if found["librespeed-cli"] != "" {
-			add("speedtest.librespeed")
+
+	enabled := map[string]bool{
+		"smart":     cfg.Features.SMART,
+		"speedtest": cfg.Features.Speedtest,
+		"journal":   cfg.Features.Logs,
+	}
+	for _, c := range tools.ProbeAll(context.Background()) {
+		if on, listed := enabled[c.ID]; listed && !on {
+			continue // door de beheerder uitgezet in config.toml
 		}
-	}
-	if found["whois"] != "" {
-		add("whois")
-	}
-	if found["dig"] != "" {
-		add("dns")
-	}
-	if found["ping"] != "" {
-		add("ping")
-	}
-	if found["traceroute"] != "" {
-		add("traceroute")
-	}
-	if found["lsblk"] != "" {
-		add("disks")
-	}
-	if cfg.Features.Logs && found["journalctl"] != "" {
-		add("journal")
+		if c.OK {
+			add(c.ID)
+		}
 	}
 	if cfg.Features.APT {
 		add("apt")

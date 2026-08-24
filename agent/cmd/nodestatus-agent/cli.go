@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"nodestatus/internal/control"
 	"nodestatus/internal/pki"
 	"nodestatus/internal/selfupdate"
+	"nodestatus/internal/tools"
 )
 
 func stateDir() string {
@@ -66,7 +69,76 @@ func cmdEnroll() {
 	if len(info.Addresses) > 0 {
 		host = info.Addresses[0]
 	}
+	// Een hostnaam die publiek naar déze machine wijst is beter dan het kale
+	// IP-adres: mobiele netwerken zijn vaak IPv6-only met NAT64/DNS64, en dat
+	// vertaalt alleen namen die via DNS gaan — een letterlijk IPv4-adres is
+	// daar simpelweg onbereikbaar. Koppelen op wifi lukt dan wel en op 4G/5G
+	// niet, wat lastig te plaatsen is. Alleen overnemen als de naam ook echt
+	// naar een van onze eigen adressen resolvet, zodat een verzonnen of
+	// interne hostnaam de QR niet onbruikbaar maakt.
+	if h := resolvableHost(info.Hostname, info.Addresses); h != "" {
+		host = h
+	}
 	printPairing(info, host, p)
+}
+
+// localSuffixes zijn namen die per definitie het LAN niet verlaten; die als
+// koppeladres aanbieden helpt buitenshuis niemand.
+var localSuffixes = []string{".local", ".lan", ".home", ".internal", ".localdomain"}
+
+func resolvableHost(hostname string, addrs []string) string {
+	h := strings.ToLower(strings.TrimSuffix(hostname, "."))
+	if h == "" || !strings.Contains(h, ".") {
+		return "" // geen FQDN; "raspberrypi" helpt niemand buiten het LAN
+	}
+	for _, s := range localSuffixes {
+		if strings.HasSuffix(h, s) {
+			return ""
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	resolved, _ := net.DefaultResolver.LookupHost(ctx, h)
+
+	own := map[string]bool{}
+	for _, a := range addrs {
+		own[a] = true
+	}
+	sawUsable := false
+	for _, r := range resolved {
+		ip := net.ParseIP(r)
+		// Debian zet standaard "127.0.1.1 <fqdn>" in /etc/hosts, en Go leest
+		// dat bestand vóór DNS. De naam lijkt dan naar loopback te wijzen
+		// terwijl hij publiek prima klopt; zulke antwoorden zeggen dus niets.
+		if ip != nil && ip.IsLoopback() {
+			continue
+		}
+		sawUsable = true
+		if own[r] {
+			return h
+		}
+	}
+	if sawUsable {
+		return "" // resolvet echt ergens anders heen — niet onze machine
+	}
+
+	// Geen bruikbaar antwoord (alleen loopback, of DNS onbereikbaar vanaf de
+	// server zelf). Een publiek IP plus een echte FQDN is dan genoeg reden om
+	// de naam aan te bieden: die werkt wél op een IPv6-only mobiel netwerk.
+	// Klopt hij toch niet, dan staat het IP-adres er nog steeds onder en is
+	// het adres in de app te wijzigen.
+	for _, a := range addrs {
+		if ip := net.ParseIP(a); ip != nil && isPublicIP(ip) {
+			return h
+		}
+	}
+	return ""
+}
+
+func isPublicIP(ip net.IP) bool {
+	return !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() &&
+		!ip.IsLinkLocalMulticast() && !ip.IsUnspecified()
 }
 
 func printPairing(info control.EnrollInfo, host string, port int) {
@@ -82,7 +154,11 @@ func printPairing(info control.EnrollInfo, host string, port int) {
 	}
 	fmt.Printf("    Pairing code \033[1;36m%s-%s\033[0m   (valid until %s)\n",
 		info.Code[:4], info.Code[4:], expires)
-	fmt.Printf("    Fingerprint  %s…%s\n\n", info.Fingerprint[:8], info.Fingerprint[len(info.Fingerprint)-8:])
+	// Volledig, niet afgekort: bij handmatig koppelen (QR scannen lukt niet
+	// altijd) moet de hele fingerprint over te typen zijn. In groepjes van
+	// acht, zodat je je plek niet kwijtraakt.
+	fmt.Printf("    Fingerprint  %s\n", groupsOf(info.Fingerprint, 8, 4))
+	fmt.Println()
 
 	if _, err := exec.LookPath("qrencode"); err == nil {
 		fmt.Println("    Scan this QR code in the Node Status app:")
@@ -242,4 +318,85 @@ func cmdUpdate() {
 		os.Exit(1)
 	}
 	fmt.Println("✔ Done.")
+}
+
+// groupsOf breekt een lange hex-string op in blokken, met na elke `perLine`
+// blokken een nieuwe regel die uitlijnt onder de eerste. Puur om een
+// fingerprint met het oog over te kunnen typen.
+func groupsOf(s string, size, perLine int) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i += size {
+		end := i + size
+		if end > len(s) {
+			end = len(s)
+		}
+		n := i / size
+		if n > 0 {
+			if n%perLine == 0 {
+				b.WriteString("\n                 ")
+			} else {
+				b.WriteByte(' ')
+			}
+		}
+		b.WriteString(s[i:end])
+	}
+	return b.String()
+}
+
+// cmdDoctor test elke optionele module op déze machine en zegt per stuk of hij
+// werkt, en zo niet: waarom en wat eraan te doen is. install.sh draait dit aan
+// het eind, zodat je meteen ziet wat je wel en niet in de app zult zien in
+// plaats van er later tegenaan te lopen.
+func cmdDoctor() {
+	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
+	cfgPath := fs.String("config", defaultConfigPath(), "path to config.toml")
+	fs.Parse(os.Args[1:])
+
+	if cfg, err := config.Load(*cfgPath); err == nil {
+		tools.SetHome(cfg.StateDir)
+	}
+	tools.Discover()
+
+	fmt.Println()
+	fmt.Printf("  \033[1mNode Status agent — module check\033[0m\n\n")
+
+	gpus := collect.DetectGPUs()
+	rows := []struct {
+		id, reason, fix string
+		ok              bool
+	}{}
+	for _, c := range tools.ProbeAll(context.Background()) {
+		rows = append(rows, struct {
+			id, reason, fix string
+			ok              bool
+		}{c.ID, c.Reason, c.Fix, c.OK})
+	}
+	rows = append(rows, struct {
+		id, reason, fix string
+		ok              bool
+	}{"gpu", "no GPU found on this machine", "", len(gpus) > 0})
+	rows = append(rows, struct {
+		id, reason, fix string
+		ok              bool
+	}{"sensors", "no hwmon/thermal sensors", "", tools.HasSensors()})
+
+	missing := 0
+	for _, r := range rows {
+		if r.ok {
+			fmt.Printf("    \033[0;32m✔\033[0m %-11s\n", r.id)
+			continue
+		}
+		missing++
+		fmt.Printf("    \033[0;33m–\033[0m %-11s %s\n", r.id, r.reason)
+		if r.fix != "" {
+			fmt.Printf("      %s└ %s\033[0m\n", "\033[2m", r.fix)
+		}
+	}
+	fmt.Println()
+	if missing == 0 {
+		fmt.Println("  Everything works on this machine.")
+	} else {
+		fmt.Printf("  %d module(s) unavailable — the app hides these.\n", missing)
+	}
+	fmt.Println()
 }

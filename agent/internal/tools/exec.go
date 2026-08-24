@@ -86,7 +86,7 @@ func Has(name string) bool { _, ok := Bin(name); return ok }
 func Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	path, ok := Bin(name)
 	if !ok {
-		return nil, fmt.Errorf("%s is niet geïnstalleerd op deze server", name)
+		return nil, fmt.Errorf("%s is not installed on this server", name)
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Env = childEnv()
@@ -110,21 +110,21 @@ func Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 func RunSudo(ctx context.Context, name string, args ...string) ([]byte, error) {
 	path, ok := Bin(name)
 	if !ok {
-		return nil, fmt.Errorf("%s is niet geïnstalleerd op deze server", name)
+		return nil, fmt.Errorf("%s is not installed on this server", name)
 	}
 	if out, err := Run(ctx, name, args...); err == nil {
 		return out, nil
 	}
 	sudo, err := exec.LookPath("sudo")
 	if err != nil {
-		return nil, fmt.Errorf("%s vereist root en sudo ontbreekt", name)
+		return nil, fmt.Errorf("%s requires root, and sudo is not available", name)
 	}
 	cmd := exec.CommandContext(ctx, sudo, append([]string{"-n", path}, args...)...)
 	cmd.Env = childEnv()
 	var out bytes.Buffer
 	cmd.Stdout = &limitedWriter{w: &out, n: maxOutput}
 	if err := cmd.Run(); err != nil {
-		return out.Bytes(), fmt.Errorf("%s: geen rechten (ontbreekt de sudoers-regel?)", name)
+		return out.Bytes(), fmt.Errorf("%s: permission denied (is the sudoers rule missing?)", name)
 	}
 	return out.Bytes(), nil
 }
@@ -161,16 +161,16 @@ var hostnameRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]
 func ValidTarget(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" || len(s) > 253 {
-		return "", fmt.Errorf("ongeldig doeladres")
+		return "", fmt.Errorf("invalid target address")
 	}
 	if addr, err := netip.ParseAddr(s); err == nil {
 		if addr.IsLoopback() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() {
-			return "", fmt.Errorf("dit adres is niet toegestaan")
+			return "", fmt.Errorf("this address is not allowed")
 		}
 		return addr.String(), nil
 	}
 	if !hostnameRe.MatchString(s) {
-		return "", fmt.Errorf("ongeldige hostname")
+		return "", fmt.Errorf("invalid hostname")
 	}
 	return s, nil
 }
@@ -200,7 +200,7 @@ func ValidRecordType(s string) (string, error) {
 		return "A", nil
 	}
 	if !dnsRecordTypes[s] {
-		return "", fmt.Errorf("onbekend recordtype")
+		return "", fmt.Errorf("unknown record type")
 	}
 	return s, nil
 }

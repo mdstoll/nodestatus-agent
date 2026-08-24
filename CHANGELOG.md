@@ -6,19 +6,92 @@ this yourself.
 
 ## [Unreleased]
 
-### Known issue
-- **Pairing to a public-IP server (e.g. a.mest.dev) still fails intermittently
-  from the iOS Simulator**, even after the fixes below. Root-caused two real,
-  separate bugs (see v0.2.2 / App v0.2.1), but a third layer remains: Apple's
-  Network.framework appears to race multiple TLS connection attempts for a
-  single enrollment request, and the losing candidate's error sometimes wins
-  even when a parallel attempt would have succeeded — reproducible from the
-  agent's own logs (repeated `TLS handshake error ... EOF` across several
-  connections within the same tap). Not yet confirmed whether this reproduces
-  on a physical device or is specific to the Simulator's network proxying.
-  `install.sh`'s public-IP fix, the agent, and the firewall are all confirmed
-  *not* the cause — verified directly with `openssl s_client` and `curl`,
-  both of which complete the same handshake reliably every time.
+## v0.2.5 / App v0.2.2 — 2026-08-24
+
+### Added
+- **Modules are probed, not assumed.** The agent now runs each optional module
+  once at startup and only reports it as a capability if it actually works.
+  Checking "is the binary installed?" was not enough: on a Raspberry Pi
+  `smartctl` is present but unusable (see below), and a `speedtest` binary
+  built for another architecture only fails on first use. The app hides
+  whatever the server does not report, so a tool that cannot work is no longer
+  offered at all.
+- `nodestatus-agent doctor` runs those same probes and prints, per module,
+  whether it works — and if not, why and how to fix it. `install.sh` runs it at
+  the end of an install (as the agent's own user, so it sees the same
+  permissions the agent will), so you learn what this machine can do before
+  opening the app rather than by hitting an error later.
+- 32-bit x86 builds (`386`), covering 32-bit Debian/Ubuntu. Together with
+  `amd64`, `arm64` and `arm` (GOARM=6) this covers every Raspberry Pi model —
+  Zero/Zero W and Pi 1 through Pi 5, on 32-bit or 64-bit. `install.sh` maps
+  `i386`/`i686` and `armv8l` onto the right build.
+- Settings → Update agent has a "Check now" button; `GET /v1/update?refresh=1`
+  asks GitHub immediately instead of waiting out the six-hour cache. The agent
+  still rate-limits how often that actually leaves the machine.
+- `docs/PLATFORMS.md`: what each build covers, how module probing works, and
+  why macOS is a port rather than a build flag.
+
+### Fixed
+- **SMART on a Raspberry Pi always failed with "permission denied".** The
+  generated sudoers rule covered `/dev/sd*`, `/dev/nvme*` and `/dev/vd*`, but a
+  Pi boots from `/dev/mmcblk0`, which the agent asks about and sudo then
+  refuses. Added `mmcblk` and `hd*`, and the probe now distinguishes "sudo
+  won't allow it" (fixable, and it says how) from "this disk has no SMART"
+  (not an error — the module is simply hidden).
+- **The agent spoke Dutch to an English app.** Around 40 user-facing strings —
+  including the "geen rechten", "niet geïnstalleerd" and speedtest errors that
+  surfaced in the app — were Dutch regardless of the app's language. They are
+  English now; the app translates its own UI.
+- **Pairing produced an address unreachable from mobile data.** The QR encoded
+  the server's raw IPv4 address. Mobile networks are commonly IPv6-only with
+  NAT64/DNS64, which synthesises IPv6 only for names resolved through DNS,
+  never for a literal IPv4 address — so pairing worked on Wi-Fi and silently
+  could not work on 4G/5G. When the machine has a real public FQDN, that name
+  is now advertised instead. Loopback answers are ignored, because Debian's
+  default `/etc/hosts` maps the FQDN to `127.0.1.1` and Go reads that file
+  before DNS. Covered by a test.
+- The GPU capability check called the GPU cache's async accessor, which by
+  design returns an empty list on its first call — so every machine reported
+  "no GPU" at startup and the app hid the GPU section. It collects
+  synchronously now. Verified end-to-end against a VAAPI encode on the test
+  NUC: 28.7% load, Render/3D 28.7%, Video 24.8%, 1.69 W, matching
+  `intel_gpu_top`.
+- Reverted the previous release's `NoClientCert`: while a pairing window was
+  open the server stopped asking for a client certificate at all, so
+  already-paired devices got "no client certificate" on every request. It asks
+  again without requiring one, which is what the app-side fix needed anyway.
+
+### Changed
+- The Metrics tiles no longer have a fixed height. Two tiles side by side take
+  the height of the taller one and their content stays top-aligned, so a tile
+  that grows a line takes its neighbour with it instead of clipping.
+- Settings → Uninstall no longer puts `--remove-extras` in the copyable
+  command. It removed packages that are useful outside this agent; the flag is
+  documented in the footnote for anyone who wants it.
+- `enroll --new` prints the full CA fingerprint in groups of eight instead of
+  abbreviating it, so manual pairing is possible when scanning the QR is not.
+- Dutch label "Opslag- en geheugeneenheden" shortened to "Data-eenheden": it
+  was the one settings row that wrapped onto a second line.
+- `install.sh` refuses to run on a non-Linux kernel with an explanation,
+  instead of installing an agent that would report nothing.
+
+### Resolved — the public-IP pairing failure
+- The "known issue" listed under App v0.2.1 is fixed, and the remaining cause
+  was neither a race nor the Simulator. `NSAllowsArbitraryLoads` was being
+  **ignored outright**: on iOS 10+ its value is discarded whenever
+  `NSAllowsLocalNetworking`, `NSAllowsArbitraryLoadsInWebContent` or
+  `NSAllowsArbitraryLoadsForMedia` is also present. Both keys were set, so the
+  local-networking exception covered the LAN server (which always worked) and
+  ATS silently kept enforcing system trust for everything else — rejecting the
+  self-signed certificate with -9802 before the app's own pinning delegate was
+  ever consulted. Removing `NSAllowsLocalNetworking` (arbitrary loads already
+  covers local networking) fixed it; pairing to a.mest.dev now succeeds and
+  streams. Confirmed against the OS log rather than inferred: the failing
+  connection showed `old_ats_enforced set true` while the working one did not.
+- Also corrected while here: declining a client-certificate challenge used
+  `.cancelAuthenticationChallenge`, which aborts the whole request. The correct
+  disposition is `.useCredential` with a nil credential, which continues the
+  handshake without offering a certificate.
 
 ## v0.2.2 — 2026-08-24
 
@@ -36,7 +109,7 @@ this yourself.
 
 ## App v0.2.1 — 2026-08-24
 
-### Fixed (partial — see Known issue above)
+### Fixed (partially — completed in v0.2.5, see above)
 - Pairing to a public-IP server could fail the TLS handshake outright:
   ATS's own system-trust pre-check (`errSSLXCertChainInvalid`, `-9802`) can
   reject a self-signed cert before the app's own pinning delegate gets a say.

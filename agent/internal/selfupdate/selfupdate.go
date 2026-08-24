@@ -330,8 +330,12 @@ func RestartService() error {
 // hour per IP — several agents behind the same NAT checking every request
 // would burn through that on their own.
 type Checker struct {
-	mu     sync.RWMutex
-	result CheckResult
+	mu      sync.RWMutex
+	result  CheckResult
+	version string
+	// last houdt bij wanneer er voor het laatst écht bij GitHub is gekeken,
+	// zodat een geforceerde controle niet als knop-spam de rate limit opeet.
+	last time.Time
 }
 
 // checkInterval is deliberately measured in hours: nobody needs to know
@@ -339,8 +343,11 @@ type Checker struct {
 // under the shared rate limit even behind a NAT with several of them.
 const checkInterval = 6 * time.Hour
 
+// minForcedInterval begrenst hoe vaak "nu controleren" echt het netwerk op mag.
+const minForcedInterval = 30 * time.Second
+
 func NewChecker(version string) *Checker {
-	c := &Checker{result: CheckResult{Current: version}}
+	c := &Checker{result: CheckResult{Current: version}, version: version}
 	go func() {
 		c.refresh(version)
 		for range time.Tick(checkInterval) {
@@ -354,7 +361,26 @@ func (c *Checker) refresh(version string) {
 	res := Check(version)
 	c.mu.Lock()
 	c.result = res
+	c.last = time.Now()
 	c.mu.Unlock()
+}
+
+// Refresh kijkt nu meteen bij GitHub in plaats van te wachten op de volgende
+// ronde van zes uur. Bedoeld voor de "nu controleren"-knop in de app: zonder
+// dit kon je na het uitbrengen van een release tot zes uur naar een verouderd
+// antwoord zitten kijken zonder te weten of het klopte.
+//
+// Er zit een ondergrens op zodat herhaald tikken de ongeauthenticeerde
+// GitHub-limiet (60 per uur) niet opmaakt; binnen die tijd krijg je het
+// laatste antwoord terug.
+func (c *Checker) Refresh() CheckResult {
+	c.mu.RLock()
+	recent := time.Since(c.last) < minForcedInterval
+	c.mu.RUnlock()
+	if !recent {
+		c.refresh(c.version)
+	}
+	return c.Result()
 }
 
 func (c *Checker) Result() CheckResult {

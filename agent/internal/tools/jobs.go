@@ -202,7 +202,7 @@ func (r *Runner) speedtest(ctx context.Context, id string) (any, error) {
 	if Has("librespeed-cli") {
 		return r.speedtestLibrespeed(ctx)
 	}
-	return nil, fmt.Errorf("geen speedtest-tool geïnstalleerd (installeer 'speedtest' of 'librespeed-cli')")
+	return nil, fmt.Errorf("no speedtest tool installed (install 'speedtest' or 'librespeed-cli')")
 }
 
 // speedtestOokla leest de jsonl-stream van de Ookla-CLI en werkt de job
@@ -288,7 +288,7 @@ func (r *Runner) speedtestOokla(ctx context.Context, id string) (any, error) {
 		return nil, fmt.Errorf("speedtest: %v", err)
 	}
 	if !haveResult {
-		return nil, fmt.Errorf("speedtest leverde geen resultaat op")
+		return nil, fmt.Errorf("the speedtest returned no result")
 	}
 	final.Engine = "ookla"
 	return final, nil
@@ -406,7 +406,7 @@ func pingJob(ctx context.Context, req JobRequest) (any, error) {
 		res.MdevMs, _ = strconv.ParseFloat(m[4], 64)
 	}
 	if res.Received == 0 {
-		return res, fmt.Errorf("geen antwoord van %s", target)
+		return res, fmt.Errorf("no response from %s", target)
 	}
 	return res, nil
 }
@@ -442,7 +442,7 @@ func dnsJob(ctx context.Context, req JobRequest) (any, error) {
 	if req.Server != "" {
 		s, err := ValidTarget(req.Server)
 		if err != nil {
-			return nil, fmt.Errorf("ongeldige DNS-server")
+			return nil, fmt.Errorf("invalid DNS server")
 		}
 		args = append([]string{"@" + s}, args...)
 		server = s

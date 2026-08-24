@@ -17,6 +17,14 @@ import (
 )
 
 func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	// ?refresh=1 kijkt meteen bij GitHub in plaats van het gecachte antwoord
+	// van maximaal zes uur oud terug te geven. De app gebruikt dit voor de
+	// knop "nu controleren"; de checker begrenst zelf hoe vaak dat echt het
+	// netwerk op gaat.
+	if r.URL.Query().Get("refresh") == "1" {
+		writeJSON(w, s.updates.Refresh())
+		return
+	}
 	writeJSON(w, s.updates.Result())
 }
 
@@ -35,7 +43,7 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	smp, ok := s.sampler.Latest()
 	if !ok {
-		writeErr(w, http.StatusServiceUnavailable, "unavailable", "nog geen sample beschikbaar")
+		writeErr(w, http.StatusServiceUnavailable, "unavailable", "no sample available yet")
 		return
 	}
 	writeJSON(w, smp)
@@ -63,7 +71,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	if !s.store.EnrollmentOpen() {
 		s.authFail(r, "pairing window closed")
 		time.Sleep(250 * time.Millisecond)
-		writeErr(w, http.StatusForbidden, "unavailable", "er staat geen koppelvenster open")
+		writeErr(w, http.StatusForbidden, "unavailable", "no pairing window is open")
 		return
 	}
 	var req enrollRequest
@@ -184,7 +192,7 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSMART(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.Features.SMART || !tools.Has("smartctl") {
-		writeJSON(w, map[string]any{"disks": []any{}, "unavailable": "smartmontools is niet geïnstalleerd"})
+		writeJSON(w, map[string]any{"disks": []any{}, "unavailable": "smartmontools is not installed"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
