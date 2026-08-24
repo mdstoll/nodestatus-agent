@@ -90,7 +90,7 @@ func (s *Server) TLSConfig(certs *pki.CertManager) *tls.Config {
 		c.GetConfigForClient = nil
 		switch {
 		case s.store.AcceptsUnauthenticated(), s.store.Count() == 0:
-			c.ClientAuth = tls.VerifyClientCertIfGiven
+			c.ClientAuth = tls.NoClientCert
 		case isLoopbackConn(hi):
 			// Verbindingen vanaf de machine zelf mogen zonder certificaat de
 			// handshake doen; de HTTP-laag laat ze daarna alleen bij

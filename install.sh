@@ -3,6 +3,12 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash
 #
+# With optional extras (SMART, WHOIS, DNS, QR, GPU tools) — note the "-s --",
+# required so bash treats what follows as this script's arguments rather than
+# its own (a bare `| sudo bash --with-extras` fails with bash's own usage text):
+#
+#   curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash -s -- --with-extras
+#
 # or, from an unpacked release tarball:
 #
 #   sudo ./install.sh --with-extras
