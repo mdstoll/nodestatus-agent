@@ -6,6 +6,20 @@ this yourself.
 
 ## [Unreleased]
 
+### Fixed
+- **Reordering servers did not actually work.** Two earlier attempts both
+  failed for the same kind of reason and neither was verified at the time:
+  `.draggable`/`.dropDestination` was beaten to the long-press by the card's
+  own `.contextMenu`, and `List.onMove` only drags in edit mode on iPhone, so
+  a long-press outside it does nothing. Reordering now sits behind a
+  "Reorder" button. Edit mode was avoided originally because of the row of
+  red delete circles; `.deleteDisabled(true)` removes those, leaving only the
+  drag handles. Verified end-to-end, including that the new order survives an
+  app restart.
+- Edit and Delete moved from the long-press context menu to swipe actions, so
+  nothing competes for the long-press and Delete is no longer one stray tap
+  away. ("Refresh now" is gone — the cards already poll every 5 seconds.)
+
 ## v0.2.5 / App v0.2.2 — 2026-08-24
 
 ### Added
