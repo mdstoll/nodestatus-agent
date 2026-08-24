@@ -53,16 +53,21 @@ struct EnrollResponse: Codable, Sendable {
 final class EnrollmentClient: NSObject, URLSessionDelegate, @unchecked Sendable {
 
     private let expectedFingerprint: String
-    private lazy var session: URLSession = {
+
+    // Elke poging krijgt een verse URLSession met een eigen connection pool.
+    // Eén verbinding tegelijk (httpMaximumConnectionsPerHost = 1) voorkomt
+    // dat URLSession zelf meerdere HTTP-verbindingen opent en racet, maar
+    // Network.framework blijkt losstaand daarvan soms twee TLS-kandidaten op
+    // TCP-niveau te racen voor dezelfde ene verbinding — de verliezer bedient
+    // dan de underlying task, en hergebruik van diezelfde sessie/pool voor een
+    // volgende poging bleek dat patroon te herhalen. Vandaar telkens een
+    // volledig nieuwe sessie in plaats van één hergebruikte.
+    private func makeSession() -> URLSession {
         let cfg = URLSessionConfiguration.ephemeral
-        // Eén verbinding tegelijk. URLSession opent er standaard meerdere en
-        // racet ze; de eerste koppelt met succes, waarna het koppelvenster
-        // sluit en de tweede sneuvelt op de TLS-handshake. De taak faalt dan
-        // met "network connection was lost" terwijl het koppelen juist lukte.
         cfg.httpMaximumConnectionsPerHost = 1
         cfg.waitsForConnectivity = false
         return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
-    }()
+    }
 
     init(expectedFingerprint: String) {
         self.expectedFingerprint = expectedFingerprint.lowercased()
@@ -83,7 +88,7 @@ final class EnrollmentClient: NSObject, URLSessionDelegate, @unchecked Sendable 
             "device_name": deviceName,
         ])
 
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await dataRetryingTransportErrors(for: req)
         guard let http = resp as? HTTPURLResponse else { throw APIClientError.http(0) }
         guard http.statusCode == 200 else {
             if let e = try? APIClient.decoder.decode(APIError.self, from: data) { throw e }
@@ -100,6 +105,37 @@ final class EnrollmentClient: NSObject, URLSessionDelegate, @unchecked Sendable 
         return out
     }
 
+    /// De handshake met een net-gepairde server race intern soms twee
+    /// verbindingskandidaten (zichtbaar als twee losse net.Conn's op de
+    /// server, elk met een eigen TLS-handshake); als de verliezer de
+    /// underlying task bedient krijgt de aanroeper een pure transportfout
+    /// terwijl een tweede poging direct slaagt. Alleen transportfouten
+    /// (TLS/verbinding) verdienen een retry — een fout ná een echte
+    /// HTTP-response (verkeerde code, verlopen venster) blijft in één keer
+    /// falen.
+    private func dataRetryingTransportErrors(for req: URLRequest, attempts: Int = 8) async throws -> (Data, URLResponse) {
+        var lastError: Error = APIClientError.badURL
+        for attempt in 1...attempts {
+            let session = makeSession()
+            defer { session.finishTasksAndInvalidate() }
+            do {
+                return try await session.data(for: req)
+            } catch let error as URLError {
+                lastError = error
+                switch error.code {
+                case .secureConnectionFailed, .networkConnectionLost, .timedOut, .cannotConnectToHost:
+                    if attempt < attempts {
+                        try? await Task.sleep(nanoseconds: 150_000_000)
+                        continue
+                    }
+                default:
+                    throw error
+                }
+            }
+        }
+        throw lastError
+    }
+
     static func fingerprint(_ cert: SecCertificate) -> String {
         let der = SecCertificateCopyData(cert) as Data
         return SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined()
@@ -108,6 +144,17 @@ final class EnrollmentClient: NSObject, URLSessionDelegate, @unchecked Sendable 
     func urlSession(_ session: URLSession,
                     didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        // Tijdens enrollment vraagt de agent soms een optioneel client-cert
+        // (mTLS "given, not required" tijdens een open koppelvenster). Er is
+        // op dit moment geen certificaat voor déze server — .performDefaultHandling
+        // bleek hier onbetrouwbaar: bij een enkel matchend item in de Keychain
+        // (bijv. het certificaat van een al-gekoppelde server) selecteert iOS
+        // dat soms zelf en biedt het aan, wat de agent terecht weigert (de
+        // issuer-CA klopt niet). Expliciet weigeren voorkomt dat.
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodClientCertificate {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let trust = challenge.protectionSpace.serverTrust else {
             completionHandler(.performDefaultHandling, nil)

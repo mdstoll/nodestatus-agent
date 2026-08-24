@@ -6,6 +6,53 @@ this yourself.
 
 ## [Unreleased]
 
+### Known issue
+- **Pairing to a public-IP server (e.g. a.mest.dev) still fails intermittently
+  from the iOS Simulator**, even after the fixes below. Root-caused two real,
+  separate bugs (see v0.2.2 / App v0.2.1), but a third layer remains: Apple's
+  Network.framework appears to race multiple TLS connection attempts for a
+  single enrollment request, and the losing candidate's error sometimes wins
+  even when a parallel attempt would have succeeded — reproducible from the
+  agent's own logs (repeated `TLS handshake error ... EOF` across several
+  connections within the same tap). Not yet confirmed whether this reproduces
+  on a physical device or is specific to the Simulator's network proxying.
+  `install.sh`'s public-IP fix, the agent, and the firewall are all confirmed
+  *not* the cause — verified directly with `openssl s_client` and `curl`,
+  both of which complete the same handshake reliably every time.
+
+## v0.2.2 — 2026-08-24
+
+### Changed
+- The TLS listener no longer requests an optional client certificate while
+  no device is paired yet or a pairing window is open (`tls.NoClientCert`
+  instead of `tls.VerifyClientCertIfGiven`) — nothing needs to identify
+  itself at that point, and asking anyway was one factor in the pairing
+  issue investigated for App v0.2.1.
+- Also deployed to a.mest.dev during this investigation, replacing the
+  0.1.0 build that had been running there since initial install — see the
+  "Debugged the a.mest.dev pairing failure" note in v0.2.0/v0.1.1: those
+  fixes were committed at the time but the running binary was never
+  actually updated until now.
+
+## App v0.2.1 — 2026-08-24
+
+### Fixed (partial — see Known issue above)
+- Pairing to a public-IP server could fail the TLS handshake outright:
+  ATS's own system-trust pre-check (`errSSLXCertChainInvalid`, `-9802`) can
+  reject a self-signed cert before the app's own pinning delegate gets a say.
+  `NSAllowsLocalNetworking` in Info.plist only covers private/local addresses,
+  not a VPS's public IP.
+- Separately, when the agent optionally requested a client certificate (only
+  happens during an open pairing window or before any device is paired), iOS
+  sometimes auto-offered whatever client identity was already in the Keychain
+  from a different, already-paired server — which the agent correctly
+  rejected (wrong issuing CA). The client-certificate challenge is now
+  declined explicitly instead of relying on default handling.
+- The enrollment request now retries automatically on transport-level
+  failures (secure-connection/timeout/connection-lost), each attempt with a
+  fresh `URLSession` — mitigates, but does not fully resolve, the race
+  described above.
+
 ## App v0.2.0 — 2026-08-24
 
 ### Added
