@@ -15,7 +15,7 @@ import (
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeErr(w, http.StatusInternalServerError, "internal", "streaming niet ondersteund")
+		writeErr(w, http.StatusInternalServerError, "internal", "streaming is not supported")
 		return
 	}
 	h := w.Header()

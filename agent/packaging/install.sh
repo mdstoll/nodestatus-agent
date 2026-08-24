@@ -70,11 +70,18 @@ echo
 
 # ---------- 1. preflight ----------
 [ "$(id -u)" -eq 0 ] || die "run this as root (sudo ./install.sh)"
+[ "$(uname -s)" = "Linux" ] || die "this agent is Linux-only.
+  Its metrics come from /proc and /sys, which $(uname -s) does not have.
+  See docs/PLATFORMS.md for what a port would involve."
 command -v systemctl >/dev/null || die "systemd is required"
 case "$(uname -m)" in
   x86_64|amd64) ARCH=amd64;;
   aarch64|arm64) ARCH=arm64;;
-  armv6l|armv7l|armv7|arm) ARCH=arm;;
+  # Raspberry Pi Zero/1 report armv6l, Pi 2/3/4/5 on a 32-bit OS report armv7l.
+  # One GOARM=6 build covers both.
+  armv6l|armv7l|armv7|armv8l|arm) ARCH=arm;;
+  # 32-bit x86 Debian/Ubuntu.
+  i386|i486|i586|i686|x86) ARCH=386;;
   *) die "unsupported architecture $(uname -m) — no release is published for it.
   The agent is a single static Go binary; if you can cross-compile it yourself
   ('cd agent && GOOS=linux GOARCH=<arch> go build ./cmd/nodestatus-agent'),
@@ -328,6 +335,13 @@ else
 fi
 echo "$HEALTH" | grep -q '"ok":true' || { journalctl -u nodestatus-agent -n 20 --no-pager; die "self-test failed"; }
 ok "self-test passed"
+
+# ---------- 12b. module check ----------
+# Draait als de agent-gebruiker, niet als root: precies de rechten waarmee de
+# agent straks zelf draait. Zo zie je hier hetzelfde als wat de app te zien
+# krijgt, in plaats van pas bij het eerste gebruik tegen een falende tool op te
+# lopen. Modules die hier ontbreken, verbergt de app.
+su -s /bin/sh "$USER" -c "$BIN doctor" 2>/dev/null || true
 
 # ---------- 13. pairing ----------
 echo

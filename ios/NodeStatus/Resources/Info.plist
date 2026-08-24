@@ -32,7 +32,35 @@
     <string>Node Status verbindt met de monitoring-agent op je servers in je lokale netwerk.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
-        <key>NSAllowsLocalNetworking</key>
+        <!-- Every server this app talks to presents a self-signed certificate
+             from its own per-server CA, which the app pins itself (see the
+             URLSessionDelegate in APIClient.swift and Enrollment.swift: the
+             CA fingerprint comes from the pairing QR and is checked against
+             the presented chain before anything is sent).
+
+             ATS evaluates system trust *before* handing the challenge to that
+             delegate, so a self-signed chain is rejected with -9802 and the
+             delegate never gets a say. NSAllowsLocalNetworking exempts private
+             addresses, which is why a LAN server always worked while a public
+             VPS never could. Servers are identified by user-supplied host/IP,
+             so NSExceptionDomains cannot enumerate them ahead of time.
+
+             Disabling ATS here does not lower the bar: pinning a specific CA
+             fingerprint is strictly stronger than ATS's "chains to any of ~150
+             public roots" check, and it is the app's own trust decision either
+             way.
+
+             NOTE: NSAllowsLocalNetworking must NOT be added back alongside
+             this. Per Apple's ATS rules, on iOS 10+ the value of
+             NSAllowsArbitraryLoads is ignored entirely — falling back to its
+             default of NO — whenever NSAllowsLocalNetworking,
+             NSAllowsArbitraryLoadsInWebContent or NSAllowsArbitraryLoadsForMedia
+             is also present. Having both is exactly why pairing to a public-IP
+             server failed with -9802 while a LAN server kept working: the
+             local-networking exception covered the LAN case, and arbitrary
+             loads was silently ignored for everything else. Arbitrary loads
+             already covers local networking, so this key alone is enough. -->
+        <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
     <key>CFBundleURLTypes</key>

@@ -113,7 +113,7 @@ final class EnrollmentClient: NSObject, URLSessionDelegate, @unchecked Sendable 
     /// (TLS/verbinding) verdienen een retry — een fout ná een echte
     /// HTTP-response (verkeerde code, verlopen venster) blijft in één keer
     /// falen.
-    private func dataRetryingTransportErrors(for req: URLRequest, attempts: Int = 8) async throws -> (Data, URLResponse) {
+    private func dataRetryingTransportErrors(for req: URLRequest, attempts: Int = 3) async throws -> (Data, URLResponse) {
         var lastError: Error = APIClientError.badURL
         for attempt in 1...attempts {
             let session = makeSession()
@@ -144,15 +144,16 @@ final class EnrollmentClient: NSObject, URLSessionDelegate, @unchecked Sendable 
     func urlSession(_ session: URLSession,
                     didReceive challenge: URLAuthenticationChallenge,
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        // Tijdens enrollment vraagt de agent soms een optioneel client-cert
-        // (mTLS "given, not required" tijdens een open koppelvenster). Er is
-        // op dit moment geen certificaat voor déze server — .performDefaultHandling
-        // bleek hier onbetrouwbaar: bij een enkel matchend item in de Keychain
-        // (bijv. het certificaat van een al-gekoppelde server) selecteert iOS
-        // dat soms zelf en biedt het aan, wat de agent terecht weigert (de
-        // issuer-CA klopt niet). Expliciet weigeren voorkomt dat.
+        // Tijdens enrollment hebben we per definitie nog geen client-certificaat
+        // voor deze server. Vraagt de agent er toch om (oudere agents deden dat
+        // ook tijdens een open koppelvenster), dan mag .performDefaultHandling
+        // hier niet: iOS pakt dan soms zelf een certificaat uit de Keychain van
+        // een àndere, al-gekoppelde server, dat de agent terecht weigert omdat
+        // de uitgevende CA niet klopt. `.useCredential` met een nil-credential
+        // stuurt een lege certificaatlijst — de handshake gaat gewoon door.
+        // (`.cancelAuthenticationChallenge` zou het hele verzoek afbreken.)
         if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodClientCertificate {
-            completionHandler(.cancelAuthenticationChallenge, nil)
+            completionHandler(.useCredential, nil)
             return
         }
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,

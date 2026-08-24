@@ -218,10 +218,18 @@ func SudoersRules(user string) []string {
 	var out []string
 	for _, p := range []string{"/usr/sbin/smartctl", "/usr/bin/smartctl"} {
 		if _, err := exec.LookPath(p); err == nil {
+			// Deze patronen moeten dekken wat tools.blockDevices() teruggeeft
+			// (alles in /sys/block behalve loop/ram/zram/dm-/md/sr). Ontbreekt
+			// er een, dan vraagt de agent smartctl op een schijf die sudo niet
+			// toestaat en krijgt de gebruiker "permission denied" in plaats van een
+			// nette "not supported" — precies wat er op een Raspberry Pi
+			// gebeurde, die van /dev/mmcblk0 boot.
 			out = append(out, user+" ALL=(root) NOPASSWD: "+
 				p+" -j -A -H -i /dev/sd[a-z], "+
 				p+" -j -A -H -i /dev/nvme[0-9]n[0-9], "+
-				p+" -j -A -H -i /dev/vd[a-z]")
+				p+" -j -A -H -i /dev/vd[a-z], "+
+				p+" -j -A -H -i /dev/mmcblk[0-9], "+
+				p+" -j -A -H -i /dev/hd[a-z]")
 			break
 		}
 	}
@@ -470,4 +478,16 @@ func amdGPUs() []GPU {
 		out = append(out, g)
 	}
 	return out
+}
+
+// DetectGPUs geeft de GPU's die deze machine heeft, ongeacht fabrikant
+// (NVIDIA via nvidia-smi, AMD via sysfs, Intel via i915). Bedoeld voor de
+// eenmalige capability-check bij het starten: zonder GPU meldt de agent de
+// capability niet en verbergt de app het hele GPU-onderdeel.
+func DetectGPUs() []GPU {
+	// Bewust collect() en niet get(): get() geeft per ontwerp meteen de cache
+	// terug en ververst op de achtergrond, dus de eerste aanroep levert altijd
+	// een lege lijst op. Bij het starten is dat precies één keer — en dan zou
+	// elke machine "geen GPU" melden en de app het GPU-onderdeel verbergen.
+	return newGPUCache(true).collect()
 }

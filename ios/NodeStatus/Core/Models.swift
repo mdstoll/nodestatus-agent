@@ -75,9 +75,16 @@ struct SystemInfo: Codable, Sendable, Equatable {
         return "\(os.name)\(v)"
     }
 
-    func has(_ capability: String) -> Bool { capabilities.contains(capability) }
-    var hasSpeedtest: Bool { capabilities.contains { $0.hasPrefix("speedtest.") } }
-    var hasGPU: Bool { capabilities.contains { $0.hasPrefix("gpu.") } }
+    /// Agents vanaf 0.2.4 melden een kale capability ("speedtest", "gpu");
+    /// daarvoor was het de variant met leverancier erin ("speedtest.ookla",
+    /// "gpu.nvidia"). Beide vormen accepteren, zodat de app blijft werken
+    /// tegen een server die nog niet is bijgewerkt.
+    func has(_ capability: String) -> Bool {
+        capabilities.contains(capability)
+            || capabilities.contains { $0.hasPrefix(capability + ".") }
+    }
+    var hasSpeedtest: Bool { has("speedtest") }
+    var hasGPU: Bool { has("gpu") }
 }
 
 // MARK: - Live sample

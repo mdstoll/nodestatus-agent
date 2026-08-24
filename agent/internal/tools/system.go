@@ -221,7 +221,7 @@ func Updates(ctx context.Context) UpdatesInfo {
 	b, err := Run(ctx, "apt", "list", "--upgradable")
 	if err != nil {
 		if b, err = Run(ctx, "apt-get", "-s", "-o", "Debug::NoLocking=1", "upgrade"); err != nil {
-			u.Error = "apt niet beschikbaar"
+			u.Error = "apt is not available"
 			return u
 		}
 		return parseAptSimulate(string(b), u)
@@ -395,7 +395,7 @@ var errNotAllowed = &notAllowedError{}
 
 type notAllowedError struct{}
 
-func (e *notAllowedError) Error() string { return "deze logbron staat niet op de whitelist" }
+func (e *notAllowedError) Error() string { return "this log source is not on the allow-list" }
 
 func inList(v string, list []string) bool {
 	for _, x := range list {

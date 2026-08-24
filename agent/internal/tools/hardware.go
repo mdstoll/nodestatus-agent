@@ -65,7 +65,7 @@ func SMART(ctx context.Context) []SmartDisk {
 			} `json:"nvme_smart_health_information_log"`
 		}
 		if json.Unmarshal(b, &r) != nil {
-			d.Error = "smartctl-output onleesbaar"
+			d.Error = "could not read smartctl output"
 			out = append(out, d)
 			continue
 		}

@@ -222,9 +222,10 @@ struct MetricsView: View {
     private func storageTile(_ s: Sample) -> some View {
         let vols = s.localStorage
         return Card(padding: 14) {
-            // Wrapped in a fixed-height frame further down so this tile
-            // matches CPU/RAM/Load exactly, whether or not the "N volumes"
-            // line is present.
+            // Deze tegel is de langste (hij heeft er soms een regel "N volumes"
+            // bij). Niet vastzetten op een hoogte: hij rekt uit tot de hoogte
+            // van zijn rij, net als MetricTile, zodat Storage en Load altijd
+            // even hoog zijn en de inhoud bovenaan blijft staan.
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     IconTile(symbol: "internaldrive.fill", color: Theme.C.magenta)
@@ -260,8 +261,9 @@ struct MetricsView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(height: Theme.M.metricTileHeight)
+        .frame(minHeight: Theme.M.metricTileHeight)
     }
 
     private func segments(_ vols: [Sample.Storage], total: UInt64) -> [SegmentedGaugeBar.Segment] {
@@ -297,7 +299,7 @@ struct MetricsView: View {
                         }
 
                         HStack {
-                            Text("Total Usage")
+                            Text(T("Total Usage", "Totaal verbruik"))
                                 .font(.subheadline)
                                 .foregroundStyle(Theme.C.textSecondary)
                             Spacer()
@@ -336,7 +338,7 @@ struct MetricsView: View {
                 HStack(spacing: 10) {
                     IconTile(symbol: "thermometer.medium", color: t.status.color)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Temperature").font(.headline).foregroundStyle(Theme.C.text)
+                        Text(T("Temperature", "Temperatuur")).font(.headline).foregroundStyle(Theme.C.text)
                         Text(t.label).font(.caption).foregroundStyle(Theme.C.textTertiary)
                     }
                     Spacer()

@@ -40,10 +40,14 @@ struct ToolsView: View {
             }
 
             Section(T("System", "Systeem")) {
-                ToolRow(title: "Log Analyzer", symbol: "doc.text.magnifyingglass",
-                        tint: Theme.C.blue) { LogAnalyzerView() }
-                ToolRow(title: "System & Updates", symbol: "arrow.down.circle.fill",
-                        tint: Theme.C.orange) { UpdatesView() }
+                if has("journal") {
+                    ToolRow(title: "Log Analyzer", symbol: "doc.text.magnifyingglass",
+                            tint: Theme.C.blue) { LogAnalyzerView() }
+                }
+                if has("apt") {
+                    ToolRow(title: "System & Updates", symbol: "arrow.down.circle.fill",
+                            tint: Theme.C.orange) { UpdatesView() }
+                }
                 ToolRow(title: T("Processes", "Processen"), symbol: "list.bullet.rectangle",
                         tint: Theme.C.purple) { ProcessesView() }
                 ToolRow(title: "Locale & Region", symbol: "globe.europe.africa.fill",
@@ -57,32 +61,55 @@ struct ToolsView: View {
                 ToolRow(title: "CPU Information", symbol: "cpu.fill", tint: Theme.C.magenta) { CPUInfoView() }
                 ToolRow(title: T("Network interfaces", "Netwerkinterfaces"), symbol: "cable.connector",
                         tint: Theme.C.green) { NetworkDetailView() }
-                ToolRow(title: T("Storage & SMART", "Opslag & SMART"), symbol: "internaldrive.fill",
-                        tint: Theme.C.magenta) { SmartDetailView() }
-                ToolRow(title: T("Sensors", "Sensoren"), symbol: "sensor.fill", tint: Theme.C.teal) { SensorsDetailView() }
-                // Hidden entirely when the server reports no GPU — a VPS
-                // without passthrough, or a vendor we don't recognise yet,
-                // shouldn't show a menu item that only leads to an empty page.
-                if !(app.latest?.gpu.isEmpty ?? true) {
+                if has("disks") || has("smart") {
+                    ToolRow(title: T("Storage & SMART", "Opslag & SMART"), symbol: "internaldrive.fill",
+                            tint: Theme.C.magenta) { SmartDetailView() }
+                }
+                if has("sensors") {
+                    ToolRow(title: T("Sensors", "Sensoren"), symbol: "sensor.fill", tint: Theme.C.teal) { SensorsDetailView() }
+                }
+                if has("gpu") {
                     ToolRow(title: "GPU", symbol: "cpu.fill", tint: Theme.C.purple) { GPUDetailView() }
                 }
             }
 
             Section(T("Network", "Netwerk")) {
-                ToolRow(title: "Network Speed", symbol: "speedometer", tint: Theme.C.cyan,
-                        subtitle: speedtestSubtitle) { SpeedtestView() }
-                ToolRow(title: "Ping", symbol: "dot.radiowaves.left.and.right",
-                        tint: Theme.C.blue) { PingView() }
-                ToolRow(title: "DNS Query", symbol: "globe", tint: Theme.C.blue) { DNSView() }
-                ToolRow(title: "Traceroute", symbol: "arrow.triangle.turn.up.right.diamond.fill",
-                        tint: Theme.C.teal) { TracerouteView() }
-                ToolRow(title: "WHOIS", symbol: "magnifyingglass.circle.fill",
-                        tint: Theme.C.orange) { WhoisView() }
+                if has("speedtest") {
+                    ToolRow(title: "Network Speed", symbol: "speedometer", tint: Theme.C.cyan,
+                            subtitle: speedtestSubtitle) { SpeedtestView() }
+                }
+                if has("ping") {
+                    ToolRow(title: "Ping", symbol: "dot.radiowaves.left.and.right",
+                            tint: Theme.C.blue) { PingView() }
+                }
+                if has("dns") {
+                    ToolRow(title: "DNS Query", symbol: "globe", tint: Theme.C.blue) { DNSView() }
+                }
+                if has("traceroute") {
+                    ToolRow(title: "Traceroute", symbol: "arrow.triangle.turn.up.right.diamond.fill",
+                            tint: Theme.C.teal) { TracerouteView() }
+                }
+                if has("whois") {
+                    ToolRow(title: "WHOIS", symbol: "magnifyingglass.circle.fill",
+                            tint: Theme.C.orange) { WhoisView() }
+                }
             }
         }
         .listStyle(.insetGrouped)
         .screenBackground()
         .accessoryInset()
+    }
+
+    /// De agent meldt alleen capabilities die op díe machine ook echt werken —
+    /// hij test ze bij het starten in plaats van alleen te kijken of het binary
+    /// bestaat. Een tool tonen die gegarandeerd "niet geïnstalleerd" of "geen
+    /// rechten" teruggeeft is erger dan hem weglaten, dus verbergen we hem.
+    ///
+    /// Zolang /v1/system nog niet binnen is tonen we alles: dat voorkomt dat de
+    /// lijst zichtbaar staat te verspringen bij het openen van het tabblad.
+    private func has(_ capability: String) -> Bool {
+        guard let sys = app.system else { return true }
+        return sys.has(capability)
     }
 
     private var speedtestSubtitle: String? {
@@ -102,7 +129,7 @@ struct CPUInfoView: View {
             if let s = app.latest {
                 Card {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("CPU Usage").font(.headline).foregroundStyle(Theme.C.text)
+                        Text(T("CPU Usage", "CPU-gebruik")).font(.headline).foregroundStyle(Theme.C.text)
                         CPUHistoryChart(samples: app.history.elements)
                         HStack(spacing: 16) {
                             legend(T("Total", "Totaal"), Theme.C.blue, s.cpu.total)
@@ -115,7 +142,7 @@ struct CPUInfoView: View {
                 Card {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("Per-Core Usage").font(.headline).foregroundStyle(Theme.C.text)
+                            Text(T("Per-Core Usage", "Gebruik per core")).font(.headline).foregroundStyle(Theme.C.text)
                             Spacer()
                             Toggle(T("History", "Historie"), isOn: $showHistory)
                                 .labelsHidden()

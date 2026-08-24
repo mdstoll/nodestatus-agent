@@ -124,6 +124,11 @@ struct MetricTile: View {
 
     var body: some View {
         Card(padding: 14) {
+            // maxHeight .infinity met .top: de rij in de LazyVGrid is zo hoog
+            // als de hoogste tegel, en elke tegel rekt daarnaar uit in plaats
+            // van een vaste hoogte te forceren. Wordt één tegel langer (een
+            // extra regel, een langere waarde), dan groeit zijn buurman mee en
+            // blijft de inhoud bovenaan staan.
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     IconTile(symbol: symbol, color: tint)
@@ -161,8 +166,9 @@ struct MetricTile: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(height: Theme.M.metricTileHeight)
+        .frame(minHeight: Theme.M.metricTileHeight)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title), \(value)")
     }

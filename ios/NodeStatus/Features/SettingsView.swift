@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var deviceError: String?
     @State private var confirmingRevokeAll = false
     @State private var updateCheck: UpdateCheckResult?
+    @State private var checkingUpdate = false
 
     var body: some View {
         NavigationStack {
@@ -36,7 +37,7 @@ struct SettingsView: View {
 
     private var appearanceSection: some View {
         Section {
-            Picker("Appearance", selection: Binding(
+            Picker(T("Appearance", "Weergave"), selection: Binding(
                 get: { app.prefs.appearance },
                 set: { app.prefs.appearance = $0; app.prefs.save() })) {
                 ForEach(AppearanceMode.allCases, id: \.self) { m in
@@ -45,7 +46,7 @@ struct SettingsView: View {
             }
             .pickerStyle(.segmented)
         } header: {
-            Text("Appearance")
+            Text(T("Appearance", "Weergave"))
         }
     }
 
@@ -86,11 +87,11 @@ struct SettingsView: View {
                     "Geldt voor elke temperatuurwaarde: de temperatuurkaart op Metrics, de Sensors-tool en CPU Information."))
             }
             HStack {
-                Picker(T("Data sizes", "Opslag- en geheugeneenheden"), selection: Binding(
+                Picker(T("Data sizes", "Data-eenheden"), selection: Binding(
                     get: { app.prefs.binaryUnits },
                     set: { app.prefs.binaryUnits = $0; app.prefs.save() })) {
-                    Text("Decimal (GB, MB)").tag(false)
-                    Text("Binary (GiB, MiB)").tag(true)
+                    Text(T("Decimal (GB, MB)", "Decimaal (GB, MB)")).tag(false)
+                    Text(T("Binary (GiB, MiB)", "Binair (GiB, MiB)")).tag(true)
                 }
                 .pickerStyle(.menu)
                 InfoButton(text: T(
@@ -125,7 +126,7 @@ struct SettingsView: View {
                 Text("300 s").tag(300)
             }
         } header: {
-            Text("Real-time")
+            Text(T("Real-time", "Realtime"))
         } footer: {
             Text(T("How much history the charts show. The agent keeps at most 5 minutes in memory and writes nothing to disk.", "Bepaalt hoeveel geschiedenis de grafieken tonen. De agent bewaart maximaal 5 minuten in geheugen en schrijft niets naar schijf."))
         }
@@ -222,14 +223,27 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.C.ok)
                         .font(.footnote)
                 }
+                Button {
+                    Task { await loadUpdateCheck(force: true) }
+                } label: {
+                    HStack(spacing: 8) {
+                        if checkingUpdate {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        Text(T("Check now", "Nu controleren"))
+                    }
+                }
+                .disabled(checkingUpdate)
             } else {
                 ProgressView().frame(maxWidth: .infinity, alignment: .center)
             }
         } header: {
             Text(T("Update agent", "Agent bijwerken"))
         } footer: {
-            Text(T("Checked from the server itself, at most every few hours. Nothing updates automatically — this only ever tells you a newer version exists.",
-                   "Wordt door de server zelf gecontroleerd, hooguit elke paar uur. Er wordt nooit automatisch iets bijgewerkt — dit laat alleen zien dát er een nieuwere versie is."))
+            Text(T("The server checks by itself every few hours; \"Check now\" asks GitHub straight away. Nothing ever updates on its own — run the command above on the server to actually install it.",
+                   "De server controleert zelf elke paar uur; \"Nu controleren\" kijkt direct bij GitHub. Er wordt nooit automatisch iets bijgewerkt — draai het commando hierboven op de server om het echt te installeren."))
         }
     }
 
@@ -237,12 +251,17 @@ struct SettingsView: View {
 
     private var uninstallSection: some View {
         Section {
-            CommandBox(command: "sudo nodestatus-uninstall.sh --purge --remove-extras")
+            // Bewust zónder --remove-extras: die vlag verwijdert pakketten die
+            // je ook buiten deze agent kunt gebruiken (smartmontools, whois,
+            // dnsutils). Wie dat wil, plakt hem er zelf achter — het staat in
+            // de voetnoot. Standaard aanzetten was te grof voor een commando
+            // dat je één keer kopieert en blind plakt.
+            CommandBox(command: "sudo nodestatus-uninstall.sh --purge")
         } header: {
             Text(T("Uninstall the agent", "Agent verwijderen"))
         } footer: {
-            Text(T("Run on the server. Removes the binary, its configuration, the CA and every paired device. --remove-extras also removes smartmontools, whois, dnsutils and the other optional packages the installer added.",
-                   "Draai dit op de server. Verwijdert de binary, de configuratie, de CA en elk gekoppeld apparaat. --remove-extras verwijdert ook smartmontools, whois, dnsutils en de andere optionele pakketten die de installer toevoegde."))
+            Text(T("Run on the server. Removes the binary, its configuration, the CA and every paired device. Optional packages the installer added (smartmontools, whois, dnsutils, …) are kept — add --remove-extras to remove those too.",
+                   "Draai dit op de server. Verwijdert de binary, de configuratie, de CA en elk gekoppeld apparaat. Optionele pakketten die de installer toevoegde (smartmontools, whois, dnsutils, …) blijven staan — zet er --remove-extras achter om ook die te verwijderen."))
         }
     }
 
@@ -292,11 +311,17 @@ struct SettingsView: View {
         }
     }
 
-    private func loadUpdateCheck() async {
+    /// `force` slaat de cache van de agent over en kijkt meteen bij GitHub.
+    /// Zonder dat kon je vlak na een release tot zes uur naar "up-to-date"
+    /// kijken zonder te weten of dat antwoord vers was.
+    private func loadUpdateCheck(force: Bool = false) async {
         guard app.selected != nil else { updateCheck = nil; return }
+        if force { checkingUpdate = true }
+        defer { checkingUpdate = false }
         do {
             let api = try app.clientForSelected()
-            updateCheck = try await api.get("v1/update", as: UpdateCheckResult.self)
+            let path = force ? "v1/update?refresh=1" : "v1/update"
+            updateCheck = try await api.get(path, as: UpdateCheckResult.self)
         } catch {
             updateCheck = nil
         }

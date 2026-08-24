@@ -90,7 +90,13 @@ func (s *Server) TLSConfig(certs *pki.CertManager) *tls.Config {
 		c.GetConfigForClient = nil
 		switch {
 		case s.store.AcceptsUnauthenticated(), s.store.Count() == 0:
-			c.ClientAuth = tls.NoClientCert
+			// Wel vrágen om een certificaat, niet verplichten. Een koppelend
+			// toestel heeft er nog geen en stuurt een lege lijst; een al
+			// gekoppeld toestel stuurt het zijne en blijft dus gewoon werken
+			// terwijl er een koppelvenster openstaat. (Met NoClientCert vraagt
+			// de server niets, en kregen bestaande toestellen tijdens dat
+			// venster "no client certificate" op elk verzoek.)
+			c.ClientAuth = tls.VerifyClientCertIfGiven
 		case isLoopbackConn(hi):
 			// Verbindingen vanaf de machine zelf mogen zonder certificaat de
 			// handshake doen; de HTTP-laag laat ze daarna alleen bij
