@@ -1,12 +1,11 @@
 # Build-output
 agent/dist/
-ios/build/
-ios/DerivedData/
 *.xcuserdatad
 xcuserdata/
 
-# Door xcodegen gegenereerd uit project.yml
-ios/NodeStatus.xcodeproj/
+# De iOS-app leeft nu in zijn eigen (private) repo, hier alleen als geneste
+# checkout voor lokaal werk — nooit als submodule/gitlink in deze repo.
+/ios/
 
 # macOS
 .DS_Store
