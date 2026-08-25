@@ -41,11 +41,46 @@ sudo nodestatus-agent devices revoke <id>
 systemctl status nodestatus-agent
 ```
 
+### Update the agent
+
+```bash
+sudo nodestatus-agent update
+```
+
+Checks the latest GitHub release, downloads the matching architecture's tarball, verifies
+it against `SHA256SUMS`, swaps the binary in place and restarts the service. A no-op if
+you're already current.
+
+Re-running the installer works just as well and comes to the same result — it's
+idempotent, so your config, pairing and certificates are left alone:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash
+```
+
 Remove it again — completely:
 
 ```bash
 sudo /usr/local/bin/uninstall.sh --purge --remove-extras
 ```
+
+---
+
+## Pair it with the app
+
+The agent never pushes itself onto a device — pairing always starts from the server.
+
+1. Run `sudo nodestatus-agent enroll --new` (or just install — it opens a pairing window on
+   its own). You get a one-time code and a QR code, valid for 15 minutes.
+2. In the app, tap **Pair a server** and either scan the QR code or enter the host, port,
+   pairing code and CA fingerprint by hand.
+3. The app generates its own key pair on-device and sends only the public half; the agent
+   signs it and hands back a client certificate. The private key never leaves the phone.
+
+From then on that device authenticates with mutual TLS on every connection — no password,
+nothing to type again. Pair a second phone the same way; revoke either one any time with
+`sudo nodestatus-agent devices revoke <id>`, which cuts it off immediately, including a
+connection that is already open. Full flow in [docs/07-security.md](docs/07-security.md).
 
 ---
 
