@@ -6,7 +6,33 @@ this yourself.
 
 ## [Unreleased]
 
+### Added
+- **CPU power draw on Metrics**, right under Temperature — only on machines
+  with Intel RAPL (the same source as the Sensors-page power reading), hidden
+  everywhere else, same rule as GPU. Runs on its own 1 Hz background cache
+  (`internal/collect/power.go`) rather than in the hot sampling loop, since
+  `sudo cat` is a real subprocess call. Verified against raw `energy_uj`
+  reads on the test NUC: agent and hardware agreed to within 0.03 W.
+
+### Changed
+- Metrics-tegels hebben nu een zachte schaduw en een dun frosted-glass laagje
+  (`Card(elevated: true)`) in plaats van een vlak paneel — elders in de app
+  (Settings, Tools, Server-lijst) is dat bewust ongemoeid gelaten.
+- De live netwerkgrafiek (Metrics-widget én Tools → Network, die al hetzelfde
+  component deelden) heeft een dikkere lijn en een verticale gradient-vulling
+  in plaats van een vlakke halftransparante vulling; hetzelfde patroon is ook
+  toegepast op de doorvoergrafiek tijdens een speedtest.
+- Zo'n 20 plekken waar Engels en Nederlands door elkaar liepen zijn
+  gelijkgetrokken: de tabbladnamen, alle detailschermtitels, en losse teksten
+  op de Metrics- en Tools-pagina die niet meededen met de taalinstelling
+  ("Settings", "Storage", "Device Status", "Sensors", …).
+
 ### Fixed
+- **Tikken op een serverkaart deed niets** sinds Server een `List` werd (voor
+  drag-to-reorder): `.onTapGesture` verliest het blijkbaar van List's eigen
+  aanraakafhandeling (swipe-acties, ingebouwde cell-selectie). Terug naar een
+  `Button` — dat kon weer sinds slepen niet meer via long-press op de kaart
+  gaat, maar via de aparte "Herschikken"-knop.
 - **Reordering servers did not actually work.** Two earlier attempts both
   failed for the same kind of reason and neither was verified at the time:
   `.draggable`/`.dropDestination` was beaten to the long-press by the card's

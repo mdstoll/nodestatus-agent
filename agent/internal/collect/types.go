@@ -101,4 +101,8 @@ type Sample struct {
 	Network NetSample       `json:"network"`
 	Temps   []Temp          `json:"temps"`
 	GPU     []GPU           `json:"gpu"`
+	// PowerW is nil zolang er geen RAPL-domein is (geen Intel-CPU, of geen
+	// powercap-ondersteuning) — de app verbergt de widget dan, net als bij
+	// GPU. Pas gezet vanaf de tweede meting; de eerste geeft nog geen snelheid.
+	PowerW *float64 `json:"power_w,omitempty"`
 }

@@ -22,7 +22,8 @@ type Sampler struct {
 	prevTime  time.Time
 	primed    bool
 
-	gpu *gpuCache
+	gpu   *gpuCache
+	power *powerCache
 
 	subsMu  sync.Mutex
 	subs    map[chan Sample]struct{}
@@ -47,6 +48,7 @@ func NewSampler(historySize int, hz int, gpuEnabled bool) *Sampler {
 		interval: time.Second / time.Duration(hz),
 		subs:     map[chan Sample]struct{}{},
 		gpu:      newGPUCache(gpuEnabled),
+		power:    newPowerCache(),
 	}
 }
 
@@ -223,6 +225,9 @@ func (s *Sampler) Tick() (Sample, bool) {
 	}
 	if g := s.gpu.get(); g != nil {
 		smp.GPU = g
+	}
+	if w, ok := s.power.get(); ok {
+		smp.PowerW = &w
 	}
 
 	s.prevCPU, s.prevCores, s.prevNet, s.prevDisk, s.prevTime = cpuAll, cpuCores, net, disk, now
