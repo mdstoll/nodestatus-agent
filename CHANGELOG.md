@@ -6,6 +6,8 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.7 / App v0.2.3 — 2026-08-25
+
 ### Added
 - **CPU power draw on Metrics**, right under Temperature — only on machines
   with Intel RAPL (the same source as the Sensors-page power reading), hidden
@@ -53,6 +55,26 @@ this yourself.
 - Edit and Delete moved from the long-press context menu to swipe actions, so
   nothing competes for the long-press and Delete is no longer one stray tap
   away. ("Refresh now" is gone — the cards already poll every 5 seconds.)
+- **RAPL power draw was overstated on the Sensors page** (Package-0 read
+  ~13–14 W there against ~10 W on the Metrics widget for the same machine at
+  the same time). `raplChip()` assumed its read-sleep-read window was exactly
+  200 ms; in reality each read goes through `RunSudo`, which first tries a
+  plain `cat` (always denied for this root-only file) and only then
+  `sudo -n cat` — that overhead was never in the 0.2 s divisor. Now measured
+  against the actual elapsed wall-clock time, like the widget already did;
+  both agree.
+- **Charts occasionally tore into a jagged, self-crossing shape**, most
+  visible in the network chart's gradient fill, especially after a brief
+  reconnect. A reconnect re-sends up to `historyWindow` seconds of backfill
+  without clearing the buffer first (by design, so the chart never blanks on
+  a hiccup) — but appended blindly, that backfill overlapped what was already
+  buffered and broke the strict time ordering every chart assumes. Samples
+  are now only appended if they move time forward.
+
+### Repo
+- **Split the iOS app into its own private repo**
+  (`github.com/mdstoll/nodestatus-ios`), history intact. This repo goes back
+  to being just the agent — public, as it always was.
 
 ## v0.2.5 / App v0.2.2 — 2026-08-24
 
