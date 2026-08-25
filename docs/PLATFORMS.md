@@ -63,10 +63,90 @@ integration and its own testing, not a flag. It is not started. `install.sh`
 refuses to run on a non-Linux kernel with an explanation rather than installing
 something that would sit there reporting zeros.
 
+## Windows
+
+Same shape of problem as macOS — `GOOS=windows go build` succeeds and reports
+nothing — but a wider spread of difficulty per collector rather than one flat
+wall, because Windows does have documented APIs for most of what `/proc` and
+`/sys` give for free on Linux:
+
+| Collector | Windows equivalent | Difficulty |
+|---|---|---|
+| CPU, RAM, disks, network | `GetSystemTimes`, `GlobalMemoryStatusEx`, `GetDiskFreeSpaceEx`, `GetIfTable2` (or the `windows/svc` + WMI route `gopsutil` already wraps) | Low — well-trodden, other Go tools do this routinely |
+| SMART | `smartctl` — smartmontools ships a native Windows build, same `-j` JSON output the agent already parses | Low, possibly closer to a config change than new code |
+| Nvidia GPU | `nvidia-smi.exe` ships with the Windows driver, same CLI | Low |
+| Intel GPU | `intel_gpu_top` is Linux-only; no equivalent CLI | Not practical without new tooling |
+| Sensors / temperature | No sysfs-style interface. Real readings need a kernel driver (what LibreHardwareMonitor bundles) or WMI's unreliable ACPI thermal zone, which many boards don't populate at all | High — the actual long pole |
+| journald / logs | Windows Event Log (`wevtutil`, or the Win32 Event Log API) | Medium — different model, needs its own parser |
+| apt updates | No equivalent; Windows Update is a COM API (`WUA`), not a CLI | Medium, and arguably out of scope |
+| systemd unit + sudoers | Windows Service (`golang.org/x/sys/windows/svc`) running as `LocalSystem` | Medium — different privilege story, see below |
+
+Two things make this a different shape of effort than the Linux collectors, not
+just more of the same:
+
+- **The least-privilege story falls apart.** Linux gets scoped `sudo` rules for
+  exactly the few commands that need root (§7.5 in
+  [docs/07-security.md](07-security.md)); the rest of the agent runs as an
+  unprivileged system user. Windows doesn't have an equivalent of "root for
+  this one binary, nothing else" — a Windows Service either runs as
+  `LocalSystem` (full privilege, for everything) or as a low-privilege account
+  that can't read most of what SMART/sensors need. Matching the current
+  security posture, not just the feature set, is its own design problem.
+- **`install.sh` has no PowerShell sibling.** A working installer needs its own
+  script (service account, cert generation, service registration, Windows
+  Firewall rule via `netsh advfirewall`), plus a signing/execution-policy story
+  so it isn't blocked by default like an unsigned `.ps1` normally is.
+
+Overall: a real second platform backend, comparable in size to the Linux one —
+CPU/RAM/disk/network and even SMART could realistically land in days, sensors
+would take real investigation (possibly ending in "not supported on most
+consumer boards"), and the installer + privilege model is its own project.
+Worth doing if there's a machine to target; not something the current codebase
+gets for free.
+
 ## Synology DSM / ESXi
 
-Both were investigated separately and are not install targets. DSM 7 turns out to
-have real systemd and a working `smartctl`, but no `useradd` (it uses `synouser`)
-and a `smartctl` too old for the JSON output the agent parses. ESXi has no Go
-runtime at all and would need a signed VIB. Neither is blocked on the build
-matrix; both need their own install path.
+Neither is an install target today. ESXi has no Go runtime at all and would
+need a signed VIB — not investigated further, since it's a hypervisor rather
+than a machine to monitor.
+
+DSM 7 is more promising than macOS or Windows, because under the package
+manager it actually *is* Linux, with a real kernel, `/proc`/`/sys`, and (as of
+DSM 7) real systemd — the same collectors and the same service model apply in
+principle. What's missing is Synology's own layer on top:
+
+- **No `useradd`.** DSM manages users through its own `synouser` command; the
+  installer's system-user step needs a DSM-specific branch rather than working
+  unmodified.
+- **`smartctl` is present but too old.** The agent parses `smartctl -j` (JSON
+  output), which needs smartmontools ≥ 7.0. DSM has historically bundled an
+  older version without it — SMART would need either a non-JSON parser
+  fallback in the agent or a newer `smartctl` sideloaded some other way
+  (e.g. from SynoCommunity), neither of which is a small addition.
+- **No `apt`.** Package Center / `synopkg` replaces it, so the installer's
+  "optional module" step (smartmontools, lm-sensors, intel-gpu-tools, …) has
+  nothing to install against on DSM even where those tools would help.
+- **DSM owns the firewall UI.** It's iptables underneath, but the
+  point-and-click Control Panel is the supported way to open a port —
+  `install.sh`'s automatic firewall rule doesn't have a DSM equivalent to call.
+- **RAPL and `sudo` are unconfirmed.** Both are plausible on real Linux/systemd
+  hardware, but whether DSM's kernel config exposes `/sys/class/powercap` and
+  whether a usable `sudo` ships at all has not been tested on an actual unit.
+
+**Specifically for the DS920+**: it's an Intel Celeron J4125 (Gemini Lake
+Refresh) box, so the existing `amd64` static binary should simply *run* —
+no cgo, no libc dependency, nothing architecture-specific to rebuild. The
+Hot-path metrics that only touch `/proc` (CPU, RAM, network, load) should work
+if the binary is running as a service at all, since those don't depend on any
+of the DSM-specific gaps above. Storage is the one collector likely to need
+its own look even once running: DSM builds volumes out of `mdraid` + LVM +
+Btrfs under `/volume1`, so the existing storage collector — written against a
+plain single-disk/partition layout — would probably need adjusting to label a
+Synology volume sensibly instead of surfacing raw RAID member devices.
+
+Net assessment: **not a `curl | bash` target today**, but also not a from-scratch
+port like Windows. The realistic path is a dedicated `install.sh --mode
+synology` (or a wholly separate `install-dsm.sh`) that branches on `synouser`,
+skips the apt-based extras step, and either ships a bundled `smartctl` or
+disables SMART, plus manual verification on real DS920+ hardware to settle the
+RAPL/`sudo` and storage-layout questions above before calling it supported.
