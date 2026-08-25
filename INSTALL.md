@@ -1,7 +1,8 @@
 # Building, deploying and testing
 
-Verified end to end against a real machine (Debian 13 trixie, Intel N100) with the app in
-the iOS 26.5 simulator and on a physical iPhone.
+Verified end to end against a real machine (Debian 13 trixie, Intel N100) with the iOS app.
+This repo covers the agent only — the iOS client lives in a private companion repo, see
+[README.md](README.md).
 
 ## 1. The agent
 
@@ -26,17 +27,18 @@ Needs Go 1.24+ (`brew install go`) and nothing else.
 The short way, straight from GitHub:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash -s -- --with-extras
+curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash
 ```
 
-Or from a tarball you built yourself:
+That installs the optional extras (SMART, WHOIS, DNS, QR, sensors, GPU) by default; add
+`-s -- --no-modules` to skip them. Or from a tarball you built yourself:
 
 ```bash
 scp agent/dist/nodestatus-agent_linux_amd64.tar.gz root@<server>:/tmp/
 ```
 
 ```bash
-ssh root@<server> 'cd /tmp && mkdir -p ns && tar xzf nodestatus-agent_linux_amd64.tar.gz -C ns && cd ns && ./install.sh --with-extras'
+ssh root@<server> 'cd /tmp && mkdir -p ns && tar xzf nodestatus-agent_linux_amd64.tar.gz -C ns && cd ns && ./install.sh'
 ```
 
 Connection profiles:
@@ -74,69 +76,7 @@ journalctl -u nodestatus-agent -f
 sudo /usr/local/bin/uninstall.sh --purge --remove-extras
 ```
 
-## 2. The iOS app
-
-### Requirements
-
-Xcode 26, Swift 6, and [xcodegen](https://github.com/yonaskolb/XcodeGen):
-
-```bash
-brew install xcodegen
-```
-
-### Build
-
-```bash
-cd ios && xcodegen generate
-```
-
-```bash
-xcodebuild -project ios/NodeStatus.xcodeproj -scheme NodeStatus -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
-```
-
-### Run in the simulator
-
-```bash
-xcrun simctl boot "iPhone 17 Pro"
-```
-
-```bash
-xcrun simctl install booted "$(find ~/Library/Developer/Xcode/DerivedData -name 'Node Status.app' -path '*Debug-iphonesimulator*' | head -1)" && xcrun simctl launch booted nl.merlinstoll.nodestatus
-```
-
-### Run on your own iPhone
-
-Open `ios/NodeStatus.xcodeproj` in Xcode once, select your iPhone and press Run. That
-creates the provisioning profile. From then on:
-
-```bash
-./deploy-iphone.sh
-```
-
-The script builds, signs and installs over USB or Wi-Fi, whichever the device is paired
-over. The first time, trust the developer certificate on the phone under
-Settings → General → VPN & Device Management.
-
-It reads the team id and profile out of the installed provisioning profile rather than
-relying on `xcodebuild` reaching your Apple account, which is the part that tends to break.
-Two traps worth knowing:
-
-- The team id is the **OU** of the signing certificate, not the code in its common name.
-  `Apple Development: you@example.com (PH7ZL6P4M9)` — that code is your personal id; the
-  team is a different value entirely, and using the wrong one produces the thoroughly
-  misleading `No Accounts: Add a new account in Accounts settings`.
-- With a free Apple account the profile expires after **7 days**. Press Run in Xcode again
-  to refresh it; the script picks up the new one automatically.
-
-## 3. Testing
-
-### Visual walkthrough — 19 screens
-
-```bash
-cd ios && xcodebuild -project NodeStatus.xcodeproj -scheme NodeStatus -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
-```
-
-Screenshots land in `/tmp/nodestatus-shots/`. Takes about 2.5 minutes.
+## 2. Testing
 
 ### API check from the outside
 
@@ -168,7 +108,7 @@ Dump a single endpoint:
 SI_HOST=<host>:29500 SI_CODE=XXXXXXXX SI_DUMP=/v1/hardware/gpu go run ./cmd/validate
 ```
 
-## 4. Measured on the test machine
+## 3. Measured on the test machine
 
 | | Measured |
 |---|---|

@@ -20,10 +20,11 @@ iPhone (SwiftUI)  ──mutual TLS 1.3──▶  nodestatus-agent  ──▶  /p
 curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash
 ```
 
-Add `--with-extras` for SMART, WHOIS, DNS, QR codes and GPU metrics:
+That installs the optional extras too — SMART, WHOIS, DNS, QR codes, sensors and GPU
+metrics. Skip them with `--no-modules`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash -s -- --with-extras
+curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash -s -- --no-modules
 ```
 
 The installer prints a pairing code and a QR code. Scan it in the app and you are done.
@@ -74,22 +75,21 @@ apt updates, locale, uptime, and a process list that flags zombie processes.
 | Scope | Read-only on system state | A stolen certificate leaks information, never control |
 
 Full analysis in [`docs/`](docs/). Start with [the architecture](docs/01-architecture.md)
-and [device enrollment](docs/10-device-enrollment.md).
+and [pairing / TLS](docs/07-security.md).
 
 ---
 
 ## Build it yourself
 
 ```bash
-cd agent && make release          # tarballs for amd64 and arm64
+cd agent && make release          # tarballs for amd64, 386, arm and arm64
 ```
 
-```bash
-cd ios && xcodegen generate && open NodeStatus.xcodeproj
-```
+Requires Go 1.24+. See [INSTALL.md](INSTALL.md) for the full build, deploy and test
+workflow.
 
-Requires Go 1.24+, Xcode 26 and [xcodegen](https://github.com/yonaskolb/XcodeGen).
-See [INSTALL.md](INSTALL.md) for the full build, deploy and test workflow.
+The iOS client ("Node Status") is closed-source and lives in a private companion repo —
+this repository is the agent only.
 
 ---
 

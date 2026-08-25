@@ -125,11 +125,12 @@ expires after 397 days (see [07 §7.2](07-security.md)). In practice that is one
 ## 2.6 Installing and removing
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash -s -- --with-extras
+curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash
 ```
 
 The installer is idempotent and does: preflight (root, systemd, architecture, free port) →
-system user → binary → config for the chosen profile → optional packages → sudoers rules
+system user → binary → config for the chosen profile → optional packages (on by default,
+`--no-modules` skips them) → sudoers rules
 for `smartctl` and `intel_gpu_top` → CA and server certificate → systemd unit → firewall
 rule → self-test against `/v1/health` → pairing window with a QR code. If the agent does
 not come up it prints the last 20 journal lines instead of a bare failure.

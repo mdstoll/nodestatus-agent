@@ -68,7 +68,7 @@ Polling stays in the app as a fallback for the case where a reverse proxy breaks
 ## 1.5 Reaching the server
 
 Four connection profiles, chosen with `install.sh --mode`. All four use the same access
-control: mutual TLS with the per-server CA from [10 — Device enrollment](10-device-enrollment.md).
+control: mutual TLS with the per-server CA — see [7.2 TLS](07-security.md#72-tls).
 The profiles differ only in *where* the agent listens.
 
 ### `lan` (default)
@@ -102,7 +102,7 @@ is no ACME, no renewals and no port 80.
 Only when you need everything on 443 (restrictive guest networks). The agent binds
 loopback and nginx terminates TLS *and* verifies the client certificate — in a **separate
 server block**, never your existing vhost, or every browser visitor gets a certificate
-picker. Config in [10 §10.7](10-device-enrollment.md).
+picker.
 
 ### In the app
 
@@ -111,17 +111,7 @@ A server may hold two addresses (`lan_host` and `remote_host`), tried in paralle
 the IPv6-only mobile networks Apple requires apps to support, a hostname resolves through
 NAT64/DNS64 and a hardcoded IPv4 address does not.
 
-## 1.6 Alternatives that were rejected
-
-| Alternative | Why not |
-|---|---|
-| Prometheus node_exporter + Grafana | Heavy, text format to parse on a phone, no tools, no native UI |
-| Netdata | Fine product, but ~150 MB RAM and its own web UI — the opposite of lightweight |
-| SSH from the app | An SSH key on your phone, fragile parsing of `top`/`df`, and you hand the app a full shell |
-| Agent pushes to a cloud | Needs a server you host and pay for, and puts all your server data with a third party |
-| SNMP | Standard, but limited metrics, no SMART/GPU/logs |
-
-## 1.7 Measured footprint
+## 1.6 Measured footprint
 
 | Measurement | Target | Measured on the test machine |
 |---|---|---|

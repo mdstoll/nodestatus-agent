@@ -464,10 +464,11 @@ func raplChip() *SensorChip {
 	domains, _ := filepath.Glob("/sys/class/powercap/intel-rapl:[0-9]*")
 	sort.Strings(domains)
 	var readings []struct {
-		label string
-		path  string
-		start uint64
-		max   uint64
+		label   string
+		path    string
+		start   uint64
+		startAt time.Time
+		max     uint64
 	}
 	for _, d := range domains {
 		// Only top-level domains (package, psys) — skip :0:0 core/uncore
@@ -477,25 +478,36 @@ func raplChip() *SensorChip {
 		}
 		name := readTrim(filepath.Join(d, "name"))
 		start, err := raplEnergyPath(filepath.Join(d, "energy_uj"))
+		startAt := time.Now()
 		if name == "" || err != nil {
 			continue
 		}
 		max, _ := strconv.ParseUint(readTrim(filepath.Join(d, "max_energy_range_uj")), 10, 64)
 		readings = append(readings, struct {
-			label string
-			path  string
-			start uint64
-			max   uint64
-		}{label: name, path: d, start: start, max: max})
+			label   string
+			path    string
+			start   uint64
+			startAt time.Time
+			max     uint64
+		}{label: name, path: d, start: start, startAt: startAt, max: max})
 	}
 	if len(readings) == 0 {
 		return nil
 	}
 	time.Sleep(200 * time.Millisecond)
 
+	// The wattage is delta-energy over the *actual* elapsed time between the
+	// two reads, not the requested 200 ms — raplEnergyPath() shells out via
+	// RunSudo, which spawns a plain `cat` (always denied for this root-only
+	// file), then `sudo -n cat`. That overhead used to be assumed away as
+	// part of a hardcoded 0.2 s divisor, which overstated the power draw by
+	// however long those two subprocess spawns actually took (RAPL package
+	// reads matched the Metrics widget's own — correctly time-measured —
+	// figure once this used real elapsed time too).
 	chip := &SensorChip{Name: "RAPL (CPU power)", Sensors: []Sensor{}}
 	for _, r := range readings {
 		end, err := raplEnergyPath(filepath.Join(r.path, "energy_uj"))
+		endAt := time.Now()
 		if err != nil {
 			continue
 		}
@@ -503,7 +515,11 @@ func raplChip() *SensorChip {
 		if end < r.start && r.max > 0 { // counter wrapped during the sleep
 			delta = (r.max - r.start) + end
 		}
-		watts := float64(delta) / 1e6 / 0.2
+		dt := endAt.Sub(r.startAt).Seconds()
+		if dt <= 0 {
+			continue
+		}
+		watts := float64(delta) / 1e6 / dt
 		chip.Sensors = append(chip.Sensors, Sensor{
 			Key: "rapl/" + r.label, Label: strings.ToUpper(r.label[:1]) + r.label[1:],
 			Type: "power", Value: watts, Unit: "W", Status: "ok",
