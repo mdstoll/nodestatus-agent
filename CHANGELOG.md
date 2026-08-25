@@ -13,8 +13,16 @@ this yourself.
   (`internal/collect/power.go`) rather than in the hot sampling loop, since
   `sudo cat` is a real subprocess call. Verified against raw `energy_uj`
   reads on the test NUC: agent and hardware agreed to within 0.03 W.
+- **Offline servers sink to the bottom of the Server list**, online ones float
+  back up — driven live by each card's own 5 s poll (`AppState.setOnline`),
+  as a stable partition so a manual "Herschikken" order survives within each
+  group.
 
 ### Changed
+- `install.sh` now installs the optional extras (smartmontools, whois,
+  dnsutils, qrencode, lm-sensors, intel-gpu-tools) **by default**; skip them
+  with `--no-modules` (`--with-extras` still works, it's just redundant now).
+  The Pair-a-server page spells this out and shows the opt-out flag.
 - Metrics-tegels hebben nu een zachte schaduw en een dun frosted-glass laagje
   (`Card(elevated: true)`) in plaats van een vlak paneel — elders in de app
   (Settings, Tools, Server-lijst) is dat bewust ongemoeid gelaten.

@@ -3,15 +3,18 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash
 #
-# With optional extras (SMART, WHOIS, DNS, QR, GPU tools) — note the "-s --",
-# required so bash treats what follows as this script's arguments rather than
-# its own (a bare `| sudo bash --with-extras` fails with bash's own usage text):
+# This installs smartmontools, whois, dnsutils, qrencode, lm-sensors and
+# intel-gpu-tools too — the optional packages that unlock the matching tools
+# in the app (SMART, WHOIS, DNS lookup, the pairing QR, sensors, Intel GPU).
+# Skip them with --no-modules — note the "-s --", required so bash treats
+# what follows as this script's arguments rather than its own (a bare
+# `| sudo bash --no-modules` fails with bash's own usage text):
 #
-#   curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash -s -- --with-extras
+#   curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash -s -- --no-modules
 #
 # or, from an unpacked release tarball:
 #
-#   sudo ./install.sh --with-extras
+#   sudo ./install.sh --no-modules
 set -euo pipefail
 
 REPO=mdstoll/nodestatus-agent
@@ -26,7 +29,7 @@ MODE=lan
 PORT=29500
 NAME=""
 VPN_IP=""
-EXTRAS=0
+EXTRAS=1
 VERSION=latest
 
 c()   { printf '\033[%sm%s\033[0m\n' "$1" "$2"; }
@@ -43,8 +46,9 @@ usage: sudo ./install.sh [options]
   --port <n>                    listen port (default: 29500)
   --name <name>                 display name shown in the app
   --vpn-ip <ip>                 with --mode vpn: address to bind to
-  --with-extras                 also install smartmontools, whois, dnsutils,
-                                qrencode, lm-sensors and intel-gpu-tools
+  --no-modules                  skip smartmontools, whois, dnsutils, qrencode,
+                                lm-sensors and intel-gpu-tools (installed
+                                by default — see --help above)
   --version <tag>               release to install (default: latest)
   --yes                         do not ask anything
 USAGE
@@ -56,7 +60,8 @@ while [ $# -gt 0 ]; do
     --port) PORT="$2"; shift 2;;
     --name) NAME="$2"; shift 2;;
     --vpn-ip) VPN_IP="$2"; shift 2;;
-    --with-extras) EXTRAS=1; shift;;
+    --no-modules) EXTRAS=0; shift;;
+    --with-extras) EXTRAS=1; shift;;  # nu de default; blijft geldig voor bestaande scripts/documentatie
     --version) VERSION="$2"; shift 2;;
     --yes|-y) shift;;
     -h|--help) usage; exit 0;;
@@ -264,7 +269,7 @@ if [ "$EXTRAS" -eq 1 ]; then
     warn "no speedtest tool found — install the Ookla CLI or librespeed-cli for the speed test"
   fi
 else
-  inf "optional packages skipped (--with-extras installs them)"
+  inf "optional packages skipped (--no-modules was given)"
 fi
 
 # ---------- 8. sudoers ----------
