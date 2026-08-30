@@ -150,8 +150,11 @@ else
   inf "system user $USER already exists"
 fi
 # Group "disk" lets smartctl identify the drive (model, size) even when the
-# SMART log itself needs sudo.
-getent group disk >/dev/null && usermod -aG disk "$USER" 2>/dev/null || true
+# SMART log itself needs sudo. Group "video" is what vcgencmd needs to open
+# /dev/vchiq — without it a Raspberry Pi's own GPU probe fails silently and
+# the app just shows no GPU at all, same class of problem as the SMART one.
+getent group disk  >/dev/null && usermod -aG disk  "$USER" 2>/dev/null || true
+getent group video >/dev/null && usermod -aG video "$USER" 2>/dev/null || true
 
 # ---------- 4. binary ----------
 systemctl stop nodestatus-agent 2>/dev/null || true
@@ -261,10 +264,28 @@ if [ "$EXTRAS" -eq 1 ]; then
   export DEBIAN_FRONTEND=noninteractive
   inf "installing optional packages…"
   apt-get update -qq || warn "apt-get update failed; continuing with what is present"
-  apt-get install -y -qq smartmontools whois dnsutils iputils-ping traceroute \
-      qrencode lm-sensors intel-gpu-tools >/dev/null 2>&1 \
-    && ok "smartmontools, whois, dnsutils, ping, traceroute, qrencode, lm-sensors, intel-gpu-tools" \
-    || warn "not every optional package could be installed"
+  # One package apt-get can't resolve fails the whole call — on arm/arm64
+  # that used to be intel-gpu-tools (x86-only, no arm build exists) and it
+  # silently took smartmontools/dnsutils/traceroute/etc. down with it, since
+  # `apt-get install pkg1 pkg2 ... pkgN` refuses to install ANY of them
+  # unless ALL of them resolve. Install one at a time instead, so a single
+  # missing or renamed package (a future Debian release could rename any of
+  # these, the way dnsutils itself became a transitional package pointing at
+  # bind9-dnsutils) only costs that one package.
+  PKGS="smartmontools whois dnsutils iputils-ping traceroute qrencode lm-sensors"
+  if [ "$ARCH" = "amd64" ] || [ "$ARCH" = "386" ]; then
+    PKGS="$PKGS intel-gpu-tools"
+  fi
+  installed="" failed=""
+  for pkg in $PKGS; do
+    if apt-get install -y -qq "$pkg" >/dev/null 2>&1; then
+      installed="$installed $pkg"
+    else
+      failed="$failed $pkg"
+    fi
+  done
+  [ -n "$installed" ] && ok "installed:$installed"
+  [ -n "$failed" ] && warn "could not install:$failed"
   if ! command -v speedtest >/dev/null && ! command -v librespeed-cli >/dev/null; then
     warn "no speedtest tool found — install the Ookla CLI or librespeed-cli for the speed test"
   fi

@@ -74,7 +74,10 @@ func (g *gpuCache) collect() []GPU {
 	if out := amdGPUs(); len(out) > 0 {
 		return out
 	}
-	return intelGPUs()
+	if out := intelGPUs(); len(out) > 0 {
+		return out
+	}
+	return broadcomGPUs()
 }
 
 func (g *gpuCache) nvidiaGPUs() []GPU {
@@ -478,6 +481,53 @@ func amdGPUs() []GPU {
 		out = append(out, g)
 	}
 	return out
+}
+
+// broadcomGPUs leest de VideoCore-GPU op een Raspberry Pi via vcgencmd — geen
+// nvidia-smi/intel_gpu_top/AMD-sysfs-equivalent bestaat hiervoor. Er is geen
+// bruikbare utilization%: vcgencmd heeft daar geen teller voor, en anders dan
+// bij een losse GPU is er geen apart VRAM om als "gebruikt/totaal" te tonen —
+// het geheugen komt uit de gpu_mem-split die op het systeem is ingesteld, dus
+// SharedMem: true en MemUsed blijft leeg in plaats van een verzonnen getal.
+func broadcomGPUs() []GPU {
+	path, err := exec.LookPath("vcgencmd")
+	if err != nil {
+		return nil
+	}
+	run := func(args ...string) string {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, path, args...).Output()
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(out))
+	}
+	memLine := run("get_mem", "gpu") // "gpu=16M"
+	if memLine == "" {
+		return nil // geen vcgencmd-antwoord: geen VideoCore-GPU op dit board
+	}
+	g := GPU{Vendor: "Broadcom", Name: "VideoCore", SharedMem: true,
+		Note: "utilization not available for VideoCore"}
+	if mb, ok := strings.CutSuffix(strings.TrimPrefix(memLine, "gpu="), "M"); ok {
+		if n, err := strconv.ParseUint(mb, 10, 64); err == nil {
+			g.MemTotal = n * 1024 * 1024
+		}
+	}
+	// "frequency(46)=499987808" — Hz, alleen het laatste veld is relevant.
+	if parts := strings.Split(run("measure_clock", "v3d"), "="); len(parts) == 2 {
+		if hz, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
+			g.ClockMHz = int(hz / 1_000_000)
+		}
+	}
+	// "temp=46.7'C"
+	if parts := strings.Split(run("measure_temp"), "="); len(parts) == 2 {
+		c := strings.TrimSuffix(strings.TrimSuffix(parts[1], "C"), "'")
+		if f, err := strconv.ParseFloat(c, 64); err == nil {
+			g.TempC = f
+		}
+	}
+	return []GPU{g}
 }
 
 // DetectGPUs geeft de GPU's die deze machine heeft, ongeacht fabrikant
