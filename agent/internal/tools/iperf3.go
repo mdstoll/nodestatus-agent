@@ -70,6 +70,11 @@ func (r *Runner) iperf3Direction(ctx context.Context, id, target string, port, d
 	if !ok {
 		return 0, fmt.Errorf("iperf3 is not installed")
 	}
+	// Meteen bij het starten van deze richting, niet pas bij de eerste
+	// per-seconde regel: anders blijft de laatste bps van de vórige richting
+	// nog even op het scherm staan onder het nieuwe label — iperf3's eigen
+	// verbindingsopzet kost al ~1 s voor die eerste regel er is.
+	r.progress(id, phase, progressBase, 0, 0)
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Env = childEnv()
 	stdout, err := cmd.StdoutPipe()

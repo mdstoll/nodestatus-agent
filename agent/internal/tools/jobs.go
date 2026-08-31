@@ -196,7 +196,10 @@ func jobTimeout(t string) time.Duration {
 		// genoeg zonder een vastgelopen run voor altijd te laten draaien.
 		return 10 * time.Minute
 	case "iperf3":
-		return 30 * time.Second
+		// Twee richtingen van 10 s elk (iperf3Direction's eigen "duration"),
+		// plus verbindingsopzet per richting — 30 s was te krap en liet de
+		// download-helft soms wegvallen doordat de context halverwege afliep.
+		return 60 * time.Second
 	}
 	return 20 * time.Second
 }
