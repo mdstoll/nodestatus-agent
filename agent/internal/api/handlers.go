@@ -303,6 +303,14 @@ func (s *Server) handleJobCreate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotImplemented, "unavailable", "speedtest staat uit")
 		return
 	}
+	if req.Type == "iperf3" && !tools.Has("iperf3") {
+		writeErr(w, http.StatusNotImplemented, "unavailable", "iperf3 is not installed")
+		return
+	}
+	if req.Type == "geekbench" && !tools.GeekbenchInstalled() {
+		writeErr(w, http.StatusNotImplemented, "unavailable", "Geekbench is not installed")
+		return
+	}
 	job, err := s.jobs.Submit(req)
 	if err != nil {
 		writeErr(w, http.StatusTooManyRequests, "unavailable", err.Error())
@@ -319,6 +327,14 @@ func (s *Server) handleJobGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, job)
+}
+
+func (s *Server) handleJobCancel(w http.ResponseWriter, r *http.Request) {
+	if !s.jobs.Cancel(r.PathValue("id")) {
+		writeErr(w, http.StatusNotFound, "not_found", "no running job with that id")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 var _ = fmt.Sprintf

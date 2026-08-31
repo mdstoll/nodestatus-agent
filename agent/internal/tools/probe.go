@@ -35,6 +35,8 @@ func ProbeAll(ctx context.Context) []Capability {
 
 	add(probeSMART(ctx))
 	add(probeSpeedtest(ctx))
+	add(probeIperf3(ctx))
+	add(probeGeekbench(ctx))
 
 	// Deze hebben genoeg aan "bestaat het binary": ze draaien als de agent
 	// zelf, zonder sudo, dus aanwezigheid is hier wél gelijk aan werken.

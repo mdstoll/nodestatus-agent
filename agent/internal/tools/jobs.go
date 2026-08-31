@@ -41,10 +41,15 @@ type Job struct {
 	LiveBps   float64      `json:"live_bps,omitempty"`
 	PingMs    float64      `json:"ping_ms,omitempty"`
 	Samples   []LiveSample `json:"samples,omitempty"`
-	StartedAt float64      `json:"started_at"`
-	EndedAt   float64      `json:"ended_at,omitempty"`
-	Result    any          `json:"result,omitempty"`
-	Error     string       `json:"error,omitempty"`
+	// Lines is raw stdout, one entry per line, for jobs where the point is
+	// to show what the underlying tool itself prints (Geekbench) rather
+	// than a parsed number — the app renders this as a small live terminal.
+	Lines     []string `json:"lines,omitempty"`
+	StartedAt float64  `json:"started_at"`
+	EndedAt   float64  `json:"ended_at,omitempty"`
+	Result    any      `json:"result,omitempty"`
+	Error     string   `json:"error,omitempty"`
+	Cancelled bool     `json:"cancelled,omitempty"`
 
 	cancel context.CancelFunc
 }
@@ -52,10 +57,16 @@ type Job struct {
 type JobRequest struct {
 	Type    string `json:"type"`
 	Target  string `json:"target"`
+	Port    int    `json:"port"`
 	Count   int    `json:"count"`
 	Record  string `json:"record"`
 	Server  string `json:"server"`
 	MaxHops int    `json:"max_hops"`
+	// Geekbench Pro credentials, forwarded straight to --username/--password.
+	// Optional: the free, anonymous flow (no credentials) already uploads a
+	// result and returns a shareable link.
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
 }
 
 type Runner struct {
@@ -106,11 +117,14 @@ func (r *Runner) Submit(req JobRequest) (*Job, error) {
 	// Twee speedtests tegelijk leveren onzin op (ze delen de lijn), dus één
 	// tegelijk. Verder geen kunstmatige wachttijd: de Ookla-CLI kent zelf
 	// geen limiet, dus de app hoeft er ook geen te verzinnen.
-	if req.Type == "speedtest" {
+	// Geekbench and iperf3 saturate a shared resource (all cores, or the
+	// link) the same way a speedtest does, so the same "only one at a time"
+	// rule applies to each of them individually.
+	if req.Type == "speedtest" || req.Type == "geekbench" || req.Type == "iperf3" {
 		for _, j := range r.jobs {
-			if j.Type == "speedtest" && (j.State == JobRunning || j.State == JobQueued) {
+			if j.Type == req.Type && (j.State == JobRunning || j.State == JobQueued) {
 				r.mu.Unlock()
-				return nil, fmt.Errorf("er loopt al een speedtest")
+				return nil, fmt.Errorf("a %s job is already running", req.Type)
 			}
 		}
 	}
@@ -134,6 +148,9 @@ func (r *Runner) Submit(req JobRequest) (*Job, error) {
 			x.EndedAt = float64(time.Now().Unix())
 			if err != nil {
 				x.State, x.Error = JobFailed, err.Error()
+				if ctx.Err() == context.Canceled {
+					x.Cancelled, x.Error = true, "stopped"
+				}
 			} else {
 				x.State, x.Result, x.Progress = JobDone, res, 1
 			}
@@ -151,6 +168,20 @@ func (r *Runner) update(id string, f func(*Job)) {
 	r.mu.Unlock()
 }
 
+// Cancel stopt een lopende taak. De job zelf zet, via zijn eigen ctx.Err(),
+// State op "failed" met Cancelled: true — er is geen apart "cancelled"
+// JobState nodig, de app kan op het veld filteren.
+func (r *Runner) Cancel(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	j, ok := r.jobs[id]
+	if !ok || (j.State != JobRunning && j.State != JobQueued) {
+		return false
+	}
+	j.cancel()
+	return true
+}
+
 func jobTimeout(t string) time.Duration {
 	switch t {
 	case "speedtest":
@@ -159,6 +190,13 @@ func jobTimeout(t string) time.Duration {
 		return 60 * time.Second
 	case "traceroute":
 		return 60 * time.Second
+	case "geekbench":
+		// Het volledige CPU-pakket (single + multi-core) duurt op trage
+		// hardware (een Pi) ruim over een minuut; 10 minuten is ruim
+		// genoeg zonder een vastgelopen run voor altijd te laten draaien.
+		return 10 * time.Minute
+	case "iperf3":
+		return 30 * time.Second
 	}
 	return 20 * time.Second
 }
@@ -175,8 +213,31 @@ func (r *Runner) execute(ctx context.Context, req JobRequest, id string) (any, e
 		return whoisJob(ctx, req)
 	case "traceroute":
 		return tracerouteJob(ctx, req)
+	case "geekbench":
+		return r.geekbenchJob(ctx, id, req)
+	case "iperf3":
+		return r.iperf3Job(ctx, id, req)
 	}
 	return nil, fmt.Errorf("onbekend taaktype %q", req.Type)
+}
+
+// appendLine voegt één regel ruwe output toe aan een lopende taak — het
+// tekst-equivalent van progress() voor taken zonder gestructureerde
+// voortgang (Geekbench print gewoon platte tekst, geen jsonl-stream).
+func (r *Runner) appendLine(id, line string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	j, ok := r.jobs[id]
+	if !ok {
+		return
+	}
+	j.Lines = append(j.Lines, line)
+	// Een volledige Geekbench-run print een paar honderd regels; dit is
+	// ruim genoeg om nooit iets zichtbaars af te knippen zonder onbegrensd
+	// te groeien.
+	if len(j.Lines) > 2000 {
+		j.Lines = j.Lines[len(j.Lines)-2000:]
+	}
 }
 
 // ---------- speedtest ----------

@@ -56,6 +56,7 @@ func Discover() map[string]string {
 		"smartctl", "nvidia-smi", "speedtest", "librespeed-cli", "whois", "dig",
 		"ping", "traceroute", "lsblk", "journalctl", "systemd-detect-virt",
 		"localectl", "timedatectl", "systemctl", "apt", "apt-get", "apt-cache", "last", "qrencode", "cat",
+		"iperf3",
 	}
 	found := map[string]string{}
 	for _, n := range names {

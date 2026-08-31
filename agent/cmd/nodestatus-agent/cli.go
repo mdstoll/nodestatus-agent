@@ -289,6 +289,65 @@ func cmdSudoers() {
 	}
 }
 
+// cmdExtras installs optional software directly through the agent —
+// dependencies, iperf3, Geekbench — without needing install.sh again. Meant
+// for adding something after the fact (a server that was set up before this
+// existed, or someone who only wants iperf3 without re-running the whole
+// installer).
+func cmdExtras() {
+	fs := flag.NewFlagSet("extras", flag.ExitOnError)
+	fs.Parse(os.Args[1:])
+	args := fs.Args()
+	if len(args) < 1 || args[0] != "install" {
+		fmt.Fprintln(os.Stderr, "usage: nodestatus-agent extras install [deps|iperf3|geekbench|all]")
+		os.Exit(2)
+	}
+	if os.Geteuid() != 0 {
+		fmt.Fprintln(os.Stderr, "✖ this needs root — run with sudo")
+		os.Exit(1)
+	}
+	want := args[1:]
+	if len(want) == 0 {
+		want = []string{"all"}
+	}
+	has := func(name string) bool {
+		for _, w := range want {
+			if w == name || w == "all" {
+				return true
+			}
+		}
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	defer cancel()
+
+	report := func(step tools.InstallStep) {
+		if step.OK {
+			fmt.Printf("  \033[0;32m✔\033[0m %s\n", step.Name)
+		} else {
+			fmt.Printf("  \033[0;33m–\033[0m %-12s %s\n", step.Name, step.Note)
+		}
+	}
+
+	if has("deps") {
+		fmt.Println("installing dependencies…")
+		for _, s := range tools.InstallStandardExtras(ctx) {
+			report(s)
+		}
+	}
+	if has("iperf3") {
+		fmt.Println("installing iperf3…")
+		report(tools.InstallAptPackage(ctx, "iperf3"))
+	}
+	if has("geekbench") {
+		fmt.Println("installing Geekbench…")
+		report(tools.InstallGeekbench(ctx))
+	}
+	fmt.Println("\nRestart the agent so it picks up what's newly available:")
+	fmt.Println("  sudo systemctl restart nodestatus-agent")
+}
+
 // cmdUpdate downloads the latest release and installs it in place. This is a
 // manual, explicit action — run by hand or from your own cron job — never
 // triggered remotely by the app. The app can only ever tell you an update

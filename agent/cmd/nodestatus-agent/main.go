@@ -69,6 +69,9 @@ func main() {
 		case "bootstrap":
 			cmdBootstrap()
 			return
+		case "extras":
+			cmdExtras()
+			return
 		case "version":
 			fmt.Println("nodestatus-agent", version)
 			return
@@ -104,6 +107,9 @@ COMMANDS
                           restart the service. Must be run as root.
   bootstrap               Create the CA and server certificate. The installer
                           does this; you rarely need it by hand.
+  extras install <what>   Install optional software without re-running
+                          install.sh: deps, iperf3, geekbench, or all.
+                          Must be run as root.
   version                 Print the version.
 
 OPTIONS

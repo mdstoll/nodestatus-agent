@@ -143,6 +143,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("POST /v1/jobs", auth(s.handleJobCreate))
 	mux.Handle("GET /v1/jobs/{id}", auth(s.handleJobGet))
+	mux.Handle("POST /v1/jobs/{id}/cancel", auth(s.handleJobCancel))
 
 	mux.Handle("GET /v1/devices", auth(s.handleDevices))
 	mux.Handle("DELETE /v1/devices/{id}", auth(s.handleDeviceRevoke))
