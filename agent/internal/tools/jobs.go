@@ -41,15 +41,11 @@ type Job struct {
 	LiveBps   float64      `json:"live_bps,omitempty"`
 	PingMs    float64      `json:"ping_ms,omitempty"`
 	Samples   []LiveSample `json:"samples,omitempty"`
-	// Lines is raw stdout, one entry per line, for jobs where the point is
-	// to show what the underlying tool itself prints (Geekbench) rather
-	// than a parsed number — the app renders this as a small live terminal.
-	Lines     []string `json:"lines,omitempty"`
-	StartedAt float64  `json:"started_at"`
-	EndedAt   float64  `json:"ended_at,omitempty"`
-	Result    any      `json:"result,omitempty"`
-	Error     string   `json:"error,omitempty"`
-	Cancelled bool     `json:"cancelled,omitempty"`
+	StartedAt float64      `json:"started_at"`
+	EndedAt   float64      `json:"ended_at,omitempty"`
+	Result    any          `json:"result,omitempty"`
+	Error     string       `json:"error,omitempty"`
+	Cancelled bool         `json:"cancelled,omitempty"`
 
 	cancel context.CancelFunc
 }
@@ -222,25 +218,6 @@ func (r *Runner) execute(ctx context.Context, req JobRequest, id string) (any, e
 		return r.iperf3Job(ctx, id, req)
 	}
 	return nil, fmt.Errorf("onbekend taaktype %q", req.Type)
-}
-
-// appendLine voegt één regel ruwe output toe aan een lopende taak — het
-// tekst-equivalent van progress() voor taken zonder gestructureerde
-// voortgang (Geekbench print gewoon platte tekst, geen jsonl-stream).
-func (r *Runner) appendLine(id, line string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	j, ok := r.jobs[id]
-	if !ok {
-		return
-	}
-	j.Lines = append(j.Lines, line)
-	// Een volledige Geekbench-run print een paar honderd regels; dit is
-	// ruim genoeg om nooit iets zichtbaars af te knippen zonder onbegrensd
-	// te groeien.
-	if len(j.Lines) > 2000 {
-		j.Lines = j.Lines[len(j.Lines)-2000:]
-	}
 }
 
 // ---------- speedtest ----------

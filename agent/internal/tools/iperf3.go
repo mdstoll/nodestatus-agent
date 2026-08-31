@@ -61,7 +61,11 @@ func (r *Runner) iperf3Job(ctx context.Context, id string, req JobRequest) (any,
 
 func (r *Runner) iperf3Direction(ctx context.Context, id, target string, port, duration int, reverse bool, progressBase float64) (float64, error) {
 	phase := "upload"
-	args := []string{"-c", target, "-p", strconv.Itoa(port), "-t", strconv.Itoa(duration), "-i", "1"}
+	// --forceflush: zonder een tty is iperf3's stdout volledig gebufferd (niet
+	// per regel), dus zonder deze vlag komen alle per-seconde regels pas in
+	// één klap binnen zodra het proces stopt — de live snelheid bleef daardoor
+	// de hele richting op 0 staan, ongeacht hoe kort de job-timeout was.
+	args := []string{"-c", target, "-p", strconv.Itoa(port), "-t", strconv.Itoa(duration), "-i", "1", "--forceflush"}
 	if reverse {
 		phase = "download"
 		args = append(args, "-R")

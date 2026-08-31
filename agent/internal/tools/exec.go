@@ -17,6 +17,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 )
 
 const maxOutput = 1 << 20 // 1 MB
@@ -72,6 +74,21 @@ func Discover() map[string]string {
 	bins = found
 	binMu.Unlock()
 	return found
+}
+
+// setpgroupCancel runs cmd in its own process group and, on context
+// cancellation, kills that whole group instead of just cmd's direct PID.
+// Needed for tools that fork worker subprocesses (Geekbench): killing only
+// the top-level process leaves the workers running, and since they inherit
+// the stdout pipe, it never sees EOF — the reading side blocks forever and a
+// "stop" never takes effect. WaitDelay is a backstop: if the group somehow
+// doesn't die within it, Go force-closes the pipes anyway so Wait() returns.
+func setpgroupCancel(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = 5 * time.Second
 }
 
 func Bin(name string) (string, bool) {
