@@ -316,8 +316,7 @@ func (s *Server) handleJobCreate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusTooManyRequests, "unavailable", err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusAccepted)
-	writeJSON(w, job)
+	writeJSONStatus(w, http.StatusAccepted, job)
 }
 
 func (s *Server) handleJobGet(w http.ResponseWriter, r *http.Request) {

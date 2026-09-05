@@ -276,6 +276,26 @@ type bucket struct {
 	last   time.Time
 }
 
+// bucketTTL is hoe lang een emmer blijft staan na het laatste verzoek. Ruim
+// langer dan de tijd die hij nodig heeft om weer vol te lopen (burst/rate = 3 s),
+// dus opruimen kost niemand zijn limiet.
+const bucketTTL = 10 * time.Minute
+
+// pruneBuckets gooit emmers weg die toch al vol zouden staan. Zonder dit groeit
+// de map onbeperkt: elk nieuw client-IP voegt een entry toe die nooit meer
+// verdwijnt — en een telefoon op mobiel internet is elke keer een ander IP.
+// Draait alleen als de map groot genoeg is om de moeite waard te zijn.
+func (s *Server) pruneBuckets(now time.Time) {
+	if len(s.rl) < 64 {
+		return
+	}
+	for k, b := range s.rl {
+		if now.Sub(b.last) > bucketTTL {
+			delete(s.rl, k)
+		}
+	}
+}
+
 func (s *Server) rateOK(r *http.Request) bool {
 	key := s.clientIP(r).String()
 	const rate, burst = 10.0, 30.0
@@ -284,6 +304,7 @@ func (s *Server) rateOK(r *http.Request) bool {
 	b, ok := s.rl[key]
 	now := time.Now()
 	if !ok {
+		s.pruneBuckets(now)
 		s.rl[key] = &bucket{tokens: burst - 1, last: now}
 		return true
 	}
@@ -302,7 +323,16 @@ func (s *Server) rateOK(r *http.Request) bool {
 // ---------- helpers ----------
 
 func writeJSON(w http.ResponseWriter, v any) {
+	writeJSONStatus(w, http.StatusOK, v)
+}
+
+// writeJSONStatus schrijft met een eigen statuscode. Aparte functie omdat de
+// volgorde ertoe doet: headers zetten ná WriteHeader is een stille no-op, dus
+// een handler die zelf al WriteHeader aanriep verstuurde zijn JSON zonder
+// Content-Type.
+func writeJSONStatus(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(v)

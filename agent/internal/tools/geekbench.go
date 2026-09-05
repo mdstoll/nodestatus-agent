@@ -28,27 +28,28 @@ var (
 )
 
 // geekbenchJob draait de gratis, anonieme flow: geen account nodig, het
-// resultaat wordt automatisch geüpload en de CLI print er een link bij die
-// je zonder in te loggen kunt bekijken. Alleen met --username/--password
-// (Pro-account) wordt onder die account geüpload in plaats van anoniem.
-func (r *Runner) geekbenchJob(ctx context.Context, id string, req JobRequest) (any, error) {
+// resultaat wordt automatisch geüpload en de CLI print er een link bij die je
+// zonder in te loggen kunt bekijken.
+//
+// Bewust géén Pro-licentie hier. De CLI kent alleen `--unlock EMAIL KEY`, en
+// dat is een eenmalige activering van de machine — geen vlag die je per run
+// meegeeft. (Er bestaan geen --username/--password vlaggen; die stonden hier
+// eerder wél en zouden een run met ingevulde licentie juist laten falen.)
+// Zie: support.primatelabs.com/kb/geekbench/geekbench-6-command-line-tool
+func (r *Runner) geekbenchJob(ctx context.Context, id string) (any, error) {
 	bin, ok := geekbenchBinary()
 	if !ok {
 		return nil, fmt.Errorf("no Geekbench build exists for this architecture")
 	}
-	args := []string{}
-	if req.Username != "" && req.Password != "" {
-		args = append(args, "--username", req.Username, "--password", req.Password)
-	}
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := exec.CommandContext(ctx, bin)
 	cmd.Env = childEnv()
 	// Geekbench forkt een apart workerproces per benchmark; zonder dit sterft
 	// bij het stoppen alleen de launcher en blijft de worker (met de
 	// stdout-pipe nog open) gewoon doordraaien — zie setpgroupCancel.
 	setpgroupCancel(cmd)
-	// stdout én stderr door elkaar: Geekbench schrijft voortgang en de
-	// uiteindelijke link door elkaar heen, en de app toont dit als één
-	// doorlopende terminal — precies zoals je het lokaal ook zou zien.
+	// stdout én stderr door dezelfde pipe: Geekbench schrijft zijn voortgang,
+	// de scores en een eventuele foutmelding door elkaar heen, en we willen ze
+	// alle drie zien — de foutmelding om hem door te kunnen geven aan de app.
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err

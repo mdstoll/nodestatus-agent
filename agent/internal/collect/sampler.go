@@ -15,6 +15,14 @@ type Sampler struct {
 	filled   int
 	interval time.Duration
 
+	// Tick() draait normaal alleen in loop(), maar Latest() roept hem ook aan
+	// zolang de ringbuffer nog leeg is — en Latest() draait op de goroutine van
+	// een HTTP-verzoek. Twee verzoeken tegelijk (of één verzoek naast de loop)
+	// schreven dan gelijktijdig in prevNet/prevDisk, en een gelijktijdige
+	// map-read+write is in Go geen race die je overleeft: de runtime kapt het
+	// hele proces af. Deze mutex serialiseert één hele meting.
+	tickMu sync.Mutex
+
 	prevCPU   cpuTimes
 	prevCores []cpuTimes
 	prevNet   map[string]netCounters
@@ -141,6 +149,9 @@ func (s *Sampler) loop(stop chan struct{}) {
 // Tick neemt één sample. De eerste tick levert geen bruikbaar resultaat op
 // (percentages zijn deltas), vandaar de bool.
 func (s *Sampler) Tick() (Sample, bool) {
+	s.tickMu.Lock()
+	defer s.tickMu.Unlock()
+
 	now := time.Now()
 	cpuAll, cpuCores := readCPUTimes()
 	net := readNetDev()

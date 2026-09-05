@@ -69,6 +69,11 @@ type InstallStep struct {
 // time and not all together: a single package apt-get can't resolve (wrong
 // architecture, renamed since) fails the *entire* call, which used to take
 // every other package down with it — see install.sh for the same fix.
+//
+// Wijkt bewust af van de pakketregels bovenaan exec.go (absoluut pad uit
+// Discover, minimale env): dit draait vanuit de CLI, waar Discover() niet
+// gedraaid heeft, en apt-get heeft zijn eigen PATH en omgeving nodig om
+// maintainer-scripts te kunnen uitvoeren.
 func InstallAptPackage(ctx context.Context, pkg string) InstallStep {
 	cmd := exec.CommandContext(ctx, "apt-get", "install", "-y", "-qq", pkg)
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
@@ -159,12 +164,15 @@ func InstallGeekbench(ctx context.Context) InstallStep {
 	if err := extractTarGz(resp.Body, geekbenchExtrasDir); err != nil {
 		return InstallStep{Name: "geekbench", Note: err.Error()}
 	}
+	// Eerst kijken óf het er staat, dan pas chmod: andersom meldt een gewijzigde
+	// archiefindeling zich als een verwarrende chmod-fout in plaats van als het
+	// echte probleem.
 	bin, _ := geekbenchBinary()
-	if err := os.Chmod(bin, 0o755); err != nil {
-		return InstallStep{Name: "geekbench", Note: "extracted, but couldn't make it executable: " + err.Error()}
-	}
 	if _, err := os.Stat(bin); err != nil {
 		return InstallStep{Name: "geekbench", Note: "extracted but " + bin + " is missing — archive layout may have changed"}
+	}
+	if err := os.Chmod(bin, 0o755); err != nil {
+		return InstallStep{Name: "geekbench", Note: "extracted, but couldn't make it executable: " + err.Error()}
 	}
 	return InstallStep{Name: "geekbench", OK: true}
 }

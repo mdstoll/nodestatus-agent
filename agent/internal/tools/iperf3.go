@@ -2,11 +2,13 @@ package tools
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"os/exec"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // Iperf3Result — zelfde vorm als SpeedtestResult (up/down in bits/s), zodat
@@ -85,6 +87,12 @@ func (r *Runner) iperf3Direction(ctx context.Context, id, target string, port, d
 	if err != nil {
 		return 0, err
 	}
+	// iperf3 schrijft "unable to connect to server: Connection refused" en
+	// "the server is busy running a test" naar stderr. Zonder dit op te vangen
+	// bleef daar alleen "exit status 1" van over — een foutmelding waar de
+	// gebruiker niets aan heeft, terwijl iperf3 zelf precies zegt wat er mis is.
+	var errb bytes.Buffer
+	cmd.Stderr = &limitedWriter{w: &errb, n: 8 << 10}
 	if err := cmd.Start(); err != nil {
 		return 0, err
 	}
@@ -115,6 +123,9 @@ func (r *Runner) iperf3Direction(ctx context.Context, id, target string, port, d
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
 			return 0, ctx.Err()
+		}
+		if msg := strings.TrimSpace(errb.String()); msg != "" {
+			return 0, fmt.Errorf("iperf3: %s", firstLine(msg))
 		}
 		return 0, fmt.Errorf("iperf3: %v", err)
 	}

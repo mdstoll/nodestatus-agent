@@ -58,23 +58,17 @@ type JobRequest struct {
 	Record  string `json:"record"`
 	Server  string `json:"server"`
 	MaxHops int    `json:"max_hops"`
-	// Geekbench Pro credentials, forwarded straight to --username/--password.
-	// Optional: the free, anonymous flow (no credentials) already uploads a
-	// result and returns a shareable link.
-	Username string `json:"username,omitempty"`
-	Password string `json:"password,omitempty"`
 }
 
 type Runner struct {
 	mu      sync.Mutex
 	jobs    map[string]*Job
 	running int
-	lastRun map[string]time.Time
 	maxPar  int
 }
 
 func NewRunner() *Runner {
-	r := &Runner{jobs: map[string]*Job{}, lastRun: map[string]time.Time{}, maxPar: 2}
+	r := &Runner{jobs: map[string]*Job{}, maxPar: 2}
 	go r.gc()
 	return r
 }
@@ -102,8 +96,8 @@ func (r *Runner) Get(id string) (*Job, bool) {
 	return &c, true
 }
 
-// Submit start een job. Speedtest heeft een eigen limiet van 1 per 5 minuten
-// omdat elke run 1-3 GB verkeer kost.
+// Submit start een job. Maximaal maxPar taken tegelijk; de zware taken
+// hebben daarnaast hun eigen "één tegelijk"-regel (zie hieronder).
 func (r *Runner) Submit(req JobRequest) (*Job, error) {
 	r.mu.Lock()
 	if r.running >= r.maxPar {
@@ -131,7 +125,6 @@ func (r *Runner) Submit(req JobRequest) (*Job, error) {
 	}
 	r.jobs[j.ID] = j
 	r.running++
-	r.lastRun[req.Type] = time.Now()
 	r.mu.Unlock()
 
 	go func() {
@@ -213,7 +206,7 @@ func (r *Runner) execute(ctx context.Context, req JobRequest, id string) (any, e
 	case "traceroute":
 		return tracerouteJob(ctx, req)
 	case "geekbench":
-		return r.geekbenchJob(ctx, id, req)
+		return r.geekbenchJob(ctx, id)
 	case "iperf3":
 		return r.iperf3Job(ctx, id, req)
 	}
@@ -321,7 +314,6 @@ func (r *Runner) speedtestOokla(ctx context.Context, id string) (any, error) {
 		case "result":
 			final.PacketLoss = e.PacketLoss
 			final.ResultURL = e.Result.URL
-			final.Engine = "ookla"
 			haveResult = true
 		}
 	}
