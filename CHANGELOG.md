@@ -6,6 +6,15 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.14 — 2026-09-06
+
+### Changed
+- **The iperf3 test measures download first, then upload** — the same order as
+  the internet speed test, which reports ping → download → upload. It used to
+  run upload first, because that is iperf3's own default, so the two tests in
+  the app built up the same two numbers in opposite orders. There is no
+  technical reason for either order: they are two separate runs.
+
 ## v0.2.13 — 2026-09-06
 
 ### Changed

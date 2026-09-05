@@ -186,6 +186,12 @@ POST /v1/jobs
 `iperf3` and `geekbench` are rejected with `501` when the tool isn't installed on that
 machine — see [02 §2.6.1](02-agent.md) for installing them.
 
+An `iperf3` job is two runs back to back: download first (`-R`, the server sends), then
+upload. That is the opposite of iperf3's own default, and deliberate — the Ookla speedtest
+reports ping → download → upload, and two tests in the app building up the same two numbers
+in a different order reads as a bug. `phase` is `download` for the first half of
+`progress`, `upload` for the second.
+
 ```
 GET /v1/jobs/j_7f3a2c
 { "state": "running", "phase": "download", "progress": 0.42,

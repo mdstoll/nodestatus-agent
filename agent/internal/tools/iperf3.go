@@ -39,9 +39,14 @@ func iperf3Bps(value, prefix string) float64 {
 	return v
 }
 
-// iperf3Job meet in twee losse runs na elkaar — upload (het standaardgedrag
-// van iperf3: de client stuurt) en download (-R, de server stuurt) — zodat
-// de app dezelfde twee cijfers krijgt als bij de gewone speedtest.
+// iperf3Job meet in twee losse runs na elkaar — download (-R, de server
+// stuurt) en dan upload (het standaardgedrag van iperf3: de client stuurt) —
+// zodat de app dezelfde twee cijfers krijgt als bij de gewone speedtest.
+//
+// Download eerst, ook al is upload iperf3's eigen default: de Ookla-speedtest
+// meet ping → download → upload, en twee tests in de app die dezelfde twee
+// getallen in een andere volgorde opbouwen is verwarrend. Er is geen technische
+// reden voor de ene of de andere volgorde — het zijn twee losse runs.
 func (r *Runner) iperf3Job(ctx context.Context, id string, req JobRequest) (any, error) {
 	target, err := ValidTarget(req.Target)
 	if err != nil {
@@ -50,11 +55,11 @@ func (r *Runner) iperf3Job(ctx context.Context, id string, req JobRequest) (any,
 	port := ClampInt(req.Port, 1, 65535, 5201)
 	const duration = 10 // seconden per richting — iperf3's eigen default
 
-	up, err := r.iperf3Direction(ctx, id, target, port, duration, false, 0)
+	down, err := r.iperf3Direction(ctx, id, target, port, duration, true, 0)
 	if err != nil {
 		return nil, err
 	}
-	down, err := r.iperf3Direction(ctx, id, target, port, duration, true, 0.5)
+	up, err := r.iperf3Direction(ctx, id, target, port, duration, false, 0.5)
 	if err != nil {
 		return nil, err
 	}
