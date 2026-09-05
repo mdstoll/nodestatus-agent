@@ -115,7 +115,7 @@ NAT64/DNS64 and a hardcoded IPv4 address does not.
 
 | Measurement | Target | Measured on the test machine |
 |---|---|---|
-| Binary | small | 7.3 MB (amd64), 6.8 MB (arm64) |
+| Binary | small | 7.8 MB (amd64), 7.2 MB (arm64) |
 | RSS | < 25 MB | 20–22 MB |
 | CPU, one client at 1 Hz | < 1% of a core | not measurable above noise |
 | CPU idle | zero | zero, five minutes after the last client |

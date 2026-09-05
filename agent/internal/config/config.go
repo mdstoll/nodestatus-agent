@@ -117,7 +117,7 @@ func Load(path string) (*Config, error) {
 		}
 		eq := strings.Index(line, "=")
 		if eq < 0 {
-			return nil, fmt.Errorf("%s:%d: geen key = value", path, ln)
+			return nil, fmt.Errorf("%s:%d: expected key = value", path, ln)
 		}
 		key := strings.ToLower(strings.TrimSpace(line[:eq]))
 		raw := strings.TrimSpace(line[eq+1:])

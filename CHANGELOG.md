@@ -6,6 +6,121 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.13 — 2026-09-06
+
+### Changed
+- **The agent speaks English everywhere now.** v0.2.5 claimed this was done,
+  but around 30 strings were missed and still reached the app in Dutch:
+  pairing errors ("koppelcode klopt niet"), job errors, the "feature is
+  switched off" replies, the default device name, and the DNS result's server
+  field. Code comments stay Dutch — those are for whoever edits the code, not
+  for the app.
+- Documentation caught up with the last five releases: the tools the app now
+  offers, `extras install`, `doctor`, the job types and the cancel endpoint,
+  the four architectures that are actually built, and the correct uninstall
+  command. Two rate limits the API doc described (per-token stream limits, a
+  30–60 s response cache) were never implemented and are gone from the table.
+
+## v0.2.12 / App v0.2.8 — 2026-09-05
+
+A full review of both codebases, so this release is fixes only.
+
+### Fixed
+- **A data race in the sampler could take the whole agent down.** `Tick()` runs
+  in the sampler loop, but `Latest()` also calls it from an HTTP handler
+  goroutine while the ring buffer is still empty. Both wrote to `prevNet` and
+  `prevDisk`, and a concurrent map read+write is not a race Go lets you
+  survive — the runtime aborts the process. One mutex around a measurement;
+  proven with `-race` before and after.
+- **The Geekbench Pro licence broke the very run it was meant to improve.** The
+  agent passed `--username`/`--password`, which the Geekbench 6 CLI does not
+  have: it only knows `--unlock EMAIL KEY`, a one-time activation with a
+  licence *key*, not an account password. Anyone who filled the field in made
+  their benchmark fail. Flags and the app's licence UI are gone; a proper
+  `--unlock` flow can come back later as its own command.
+- **iperf3 errors were unreadable.** stderr wasn't captured anywhere, so
+  "unable to connect to server: Connection refused" reached the app as
+  "exit status 1".
+- **`POST /v1/jobs` answered without a `Content-Type`**: the header was set
+  after `WriteHeader`, where it is silently ignored.
+- **The rate-limit map grew without bound** — every client IP stayed in it
+  forever, and a phone on mobile data arrives with a different IP every time.
+- The Geekbench installer reported a changed archive layout as a confusing
+  chmod error, because it ran `chmod` before checking the file was there.
+- **The app leaked a URLSession per poll.** `APIClient` is the delegate of its
+  own sessions, and a session holds its delegate until you invalidate it, so
+  every 5 s poll per node added one that never went away. One client per node
+  now, reused (which also saves a TLS handshake per poll) and invalidated when
+  the address changes or the node is removed.
+- **A card kept showing the last CPU and RAM of a node that had gone offline**,
+  as if those numbers were current. Metrics already handled this properly
+  (dimmed, with a banner); the card does now too.
+- **Detail screens kept the previous node's data when you switched nodes** —
+  and if loading failed for the new one, kept it indefinitely, presented as
+  belonging to the node you were now looking at.
+- A bare IPv6 address is bracketed in the base URL, so such a node is
+  reachable at all.
+- The stream no longer reconnects on `.inactive`: pulling down Control Centre
+  is not a reason to drop it.
+- Removed dead state (`lastRun`) and a comment describing a speedtest rate
+  limit that does not exist; the Dutch copy in the app promised it too.
+
+## v0.2.11 / App v0.2.6–0.2.7 — 2026-08-31
+
+### Fixed
+- **Stopping a benchmark did not stop it.** Geekbench forks a worker process
+  per benchmark; killing only the launcher left the worker running with the
+  stdout pipe still open, so the read side never saw EOF and the job stayed
+  "running" forever. It runs in its own process group now and cancelling kills
+  the group.
+- **iperf3 showed no live throughput during a test.** Without a terminal its
+  stdout is block-buffered, so every per-second line arrived in one burst when
+  the process exited — the live figure sat at 0 for a whole direction
+  regardless of the job timeout. `--forceflush` fixes it at the source.
+
+### Changed
+- The benchmark screen shows which phase is running (single-core or
+  multi-core) instead of streaming raw CLI output into a terminal view.
+- Benchmark moved out of Node Uptime into its own entry in the Tools list.
+- The per-core usage bar fills up immediately: its block duration follows the
+  configured history window instead of assuming a fixed five minutes, which is
+  more than the app ever backfills.
+
+## v0.2.10 — 2026-08-31
+
+### Fixed
+- iperf3's job timeout (30 s) was too tight for its own two 10-second
+  directions plus connection setup, so the download half could be cut off.
+  Raised to 60 s, and the live value resets at the upload→download handoff
+  instead of briefly showing the previous direction's number.
+
+## v0.2.9 / App v0.2.4–0.2.5 — 2026-08-31
+
+### Added
+- **`nodestatus-agent extras install [deps|iperf3|geekbench|all]`** — installs
+  optional software without re-running install.sh, for a machine that was set
+  up before a tool existed.
+- **iperf3 as a second speed test**, next to the internet speed test: raw
+  throughput to a machine of your own, in both directions, with the same live
+  chart. Hidden unless iperf3 is installed on the node.
+- **Geekbench CPU benchmark**, run from the app, with the result linked to the
+  Geekbench Browser. The free anonymous flow needs no account. Downloads the
+  build for the machine's own architecture; there is no 32-bit build.
+- `POST /v1/jobs/{id}/cancel`, so a long job can be stopped from the app.
+
+## v0.2.8 — 2026-08-30
+
+### Fixed
+- **install.sh installed none of the optional packages on a Raspberry Pi.**
+  They were installed in one `apt-get install` call, and a single package apt
+  cannot resolve for that architecture (`intel-gpu-tools` on ARM) fails the
+  entire call, taking every other package with it. Installed one at a time
+  now, and intel-gpu-tools is only requested on x86.
+- **No GPU on a Raspberry Pi.** There was no detection for Broadcom/VideoCore
+  at all, and once added, `vcgencmd` still failed for the unprivileged agent
+  user: it needs the `video` group to open `/dev/vchiq`. The installer grants
+  it, alongside the `disk` group it already granted for smartctl.
+
 ## v0.2.7 / App v0.2.3 — 2026-08-25
 
 ### Added
@@ -17,7 +132,7 @@ this yourself.
   reads on the test NUC: agent and hardware agreed to within 0.03 W.
 - **Offline servers sink to the bottom of the Server list**, online ones float
   back up — driven live by each card's own 5 s poll (`AppState.setOnline`),
-  as a stable partition so a manual "Herschikken" order survives within each
+  as a stable partition so a manual "Reorder" order survives within each
   group.
 
 ### Changed
@@ -25,24 +140,24 @@ this yourself.
   dnsutils, qrencode, lm-sensors, intel-gpu-tools) **by default**; skip them
   with `--no-modules` (`--with-extras` still works, it's just redundant now).
   The Pair-a-server page spells this out and shows the opt-out flag.
-- Metrics-tegels hebben nu een zachte schaduw en een dun frosted-glass laagje
-  (`Card(elevated: true)`) in plaats van een vlak paneel — elders in de app
-  (Settings, Tools, Server-lijst) is dat bewust ongemoeid gelaten.
-- De live netwerkgrafiek (Metrics-widget én Tools → Network, die al hetzelfde
-  component deelden) heeft een dikkere lijn en een verticale gradient-vulling
-  in plaats van een vlakke halftransparante vulling; hetzelfde patroon is ook
-  toegepast op de doorvoergrafiek tijdens een speedtest.
-- Zo'n 20 plekken waar Engels en Nederlands door elkaar liepen zijn
-  gelijkgetrokken: de tabbladnamen, alle detailschermtitels, en losse teksten
-  op de Metrics- en Tools-pagina die niet meededen met de taalinstelling
+- Metrics tiles now have a soft shadow and a thin frosted-glass layer
+  (`Card(elevated: true)`) instead of a flat panel — deliberately left alone
+  everywhere else in the app (Settings, Tools, the Server list).
+- The live network chart (the Metrics widget and Tools → Network, which
+  already shared the same component) has a thicker line and a vertical
+  gradient fill instead of a flat semi-transparent one; the same treatment was
+  applied to the throughput chart during a speed test.
+- Around 20 places where English and Dutch ran into each other were brought in
+  line: the tab names, every detail-screen title, and loose strings on the
+  Metrics and Tools pages that ignored the language setting altogether
   ("Settings", "Storage", "Device Status", "Sensors", …).
 
 ### Fixed
-- **Tikken op een serverkaart deed niets** sinds Server een `List` werd (voor
-  drag-to-reorder): `.onTapGesture` verliest het blijkbaar van List's eigen
-  aanraakafhandeling (swipe-acties, ingebouwde cell-selectie). Terug naar een
-  `Button` — dat kon weer sinds slepen niet meer via long-press op de kaart
-  gaat, maar via de aparte "Herschikken"-knop.
+- **Tapping a server card did nothing** ever since the Server tab became a
+  `List` (for drag-to-reorder): `.onTapGesture` apparently loses to List's own
+  touch handling (swipe actions, built-in cell selection). Back to a `Button`
+  — possible again now that dragging no longer goes through a long-press on
+  the card itself, but through the separate "Reorder" button.
 - **Reordering servers did not actually work.** Two earlier attempts both
   failed for the same kind of reason and neither was verified at the time:
   `.draggable`/`.dropDestination` was beaten to the long-press by the card's

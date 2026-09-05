@@ -206,7 +206,7 @@ func cmdDevices() {
 		}
 	case "revoke":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "gebruik: nodestatus-agent devices revoke <id>")
+			fmt.Fprintln(os.Stderr, "usage: nodestatus-agent devices revoke <id>")
 			os.Exit(2)
 		}
 		resp, err := control.Call(stateDir(), control.Request{Cmd: "devices-revoke", Arg: os.Args[2]})

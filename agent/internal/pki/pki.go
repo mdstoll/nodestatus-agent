@@ -39,7 +39,7 @@ func LoadOrCreateCA(dir string) (*CA, error) {
 	if b, err := os.ReadFile(certPath); err == nil {
 		kb, err := os.ReadFile(keyPath)
 		if err != nil {
-			return nil, fmt.Errorf("CA-sleutel ontbreekt: %w", err)
+			return nil, fmt.Errorf("the CA key is missing: %w", err)
 		}
 		cert, err := parseCertPEM(b)
 		if err != nil {
@@ -276,7 +276,7 @@ func serial() *big.Int {
 func parseCertPEM(b []byte) (*x509.Certificate, error) {
 	blk, _ := pem.Decode(b)
 	if blk == nil {
-		return nil, fmt.Errorf("geen PEM-blok gevonden")
+		return nil, fmt.Errorf("no PEM block found")
 	}
 	return x509.ParseCertificate(blk.Bytes)
 }
@@ -284,7 +284,7 @@ func parseCertPEM(b []byte) (*x509.Certificate, error) {
 func parseECKeyPEM(b []byte) (*ecdsa.PrivateKey, error) {
 	blk, _ := pem.Decode(b)
 	if blk == nil {
-		return nil, fmt.Errorf("geen PEM-blok gevonden")
+		return nil, fmt.Errorf("no PEM block found")
 	}
 	return x509.ParseECPrivateKey(blk.Bytes)
 }

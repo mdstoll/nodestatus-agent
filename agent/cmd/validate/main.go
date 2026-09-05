@@ -131,7 +131,7 @@ func main() {
 
 	// 4. Verkeerd token moet 401 geven
 	req, _ := http.NewRequest("GET", "https://"+host+"/v1/system", nil)
-	req.Header.Set("Authorization", "Bearer fout-token")
+	req.Header.Set("Authorization", "Bearer wrong-token")
 	if rr, err := client.Do(req); err == nil {
 		mark := "✔"
 		if rr.StatusCode != 401 {

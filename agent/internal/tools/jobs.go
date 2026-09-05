@@ -102,7 +102,7 @@ func (r *Runner) Submit(req JobRequest) (*Job, error) {
 	r.mu.Lock()
 	if r.running >= r.maxPar {
 		r.mu.Unlock()
-		return nil, fmt.Errorf("er lopen al %d taken; probeer het zo opnieuw", r.maxPar)
+		return nil, fmt.Errorf("%d jobs are already running; try again shortly", r.maxPar)
 	}
 	// Twee speedtests tegelijk leveren onzin op (ze delen de lijn), dus één
 	// tegelijk. Verder geen kunstmatige wachttijd: de Ookla-CLI kent zelf
@@ -210,7 +210,7 @@ func (r *Runner) execute(ctx context.Context, req JobRequest, id string) (any, e
 	case "iperf3":
 		return r.iperf3Job(ctx, id, req)
 	}
-	return nil, fmt.Errorf("onbekend taaktype %q", req.Type)
+	return nil, fmt.Errorf("unknown job type %q", req.Type)
 }
 
 // ---------- speedtest ----------
@@ -367,7 +367,7 @@ func (r *Runner) speedtestLibrespeed(ctx context.Context) (any, error) {
 		} `json:"server"`
 	}
 	if err := json.Unmarshal(b, &arr); err != nil || len(arr) == 0 {
-		return nil, fmt.Errorf("librespeed-output onleesbaar")
+		return nil, fmt.Errorf("could not read the librespeed output")
 	}
 	o := arr[0]
 	return SpeedtestResult{
@@ -471,7 +471,7 @@ func dnsJob(ctx context.Context, req JobRequest) (any, error) {
 		return nil, err
 	}
 	args := []string{target, rec, "+noall", "+answer", "+stats", "+timeout=3", "+tries=1"}
-	server := "systeem"
+	server := "system"
 	if req.Server != "" {
 		s, err := ValidTarget(req.Server)
 		if err != nil {
@@ -534,7 +534,7 @@ func whoisJob(ctx context.Context, req JobRequest) (any, error) {
 	}
 	raw := string(b)
 	if len(raw) > 60000 {
-		raw = raw[:60000] + "\n… (afgekapt)"
+		raw = raw[:60000] + "\n… (truncated)"
 	}
 	res := WhoisResult{Query: target, Raw: raw, NameServers: []string{}, Status: []string{}}
 	for _, line := range strings.Split(raw, "\n") {

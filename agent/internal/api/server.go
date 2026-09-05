@@ -159,7 +159,7 @@ func (s *Server) baseMiddleware(next http.Handler) http.Handler {
 		defer func() {
 			if rec := recover(); rec != nil {
 				s.log.Error("panic in handler", "path", r.URL.Path, "err", rec)
-				writeErr(w, http.StatusInternalServerError, "internal", "interne fout")
+				writeErr(w, http.StatusInternalServerError, "internal", "internal error")
 			}
 		}()
 		h := w.Header()

@@ -76,18 +76,18 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	var req enrollRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_argument", "onleesbaar verzoek")
+		writeErr(w, http.StatusBadRequest, "invalid_argument", "could not read the request")
 		return
 	}
 	if !s.store.CheckEnrollCode(req.Code) {
 		s.authFail(r, "wrong pairing code")
 		time.Sleep(500 * time.Millisecond)
-		writeErr(w, http.StatusForbidden, "unauthorized", "koppelcode klopt niet")
+		writeErr(w, http.StatusForbidden, "unauthorized", "that pairing code is not correct")
 		return
 	}
 	raw, err := base64.StdEncoding.DecodeString(req.PublicKey)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_argument", "publieke sleutel is geen geldige base64")
+		writeErr(w, http.StatusBadRequest, "invalid_argument", "the public key is not valid base64")
 		return
 	}
 	pub, err := pki.ParseP256PublicKey(raw)
@@ -97,16 +97,16 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	name := req.DeviceName
 	if name == "" {
-		name = "Onbekend apparaat"
+		name = "Unknown device"
 	}
 	certPEM, fp, notAfter, err := s.ca.IssueClient(pub, name, s.cfg.ClientCertDays)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", "certificaat uitgeven mislukt")
+		writeErr(w, http.StatusInternalServerError, "internal", "could not issue the certificate")
 		return
 	}
 	dev, token, err := s.store.Add(name, fp, notAfter)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", "apparaat opslaan mislukt")
+		writeErr(w, http.StatusInternalServerError, "internal", "could not store the device")
 		return
 	}
 	s.store.CloseEnrollment()
@@ -156,12 +156,12 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		PublicKey string `json:"public_key_b64"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_argument", "onleesbaar verzoek")
+		writeErr(w, http.StatusBadRequest, "invalid_argument", "could not read the request")
 		return
 	}
 	raw, err := base64.StdEncoding.DecodeString(req.PublicKey)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_argument", "ongeldige sleutel")
+		writeErr(w, http.StatusBadRequest, "invalid_argument", "invalid key")
 		return
 	}
 	pub, err := pki.ParseP256PublicKey(raw)
@@ -171,7 +171,7 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 	}
 	certPEM, fp, notAfter, err := s.ca.IssueClient(pub, me.Name, s.cfg.ClientCertDays)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", "vernieuwen mislukt")
+		writeErr(w, http.StatusInternalServerError, "internal", "could not renew the certificate")
 		return
 	}
 	if _, err := s.store.Replace(me.Fingerprint, fp, notAfter); err != nil {
@@ -254,7 +254,7 @@ func (s *Server) handleLocale(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdates(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.Features.APT {
-		writeErr(w, http.StatusNotImplemented, "unavailable", "apt-integratie staat uit")
+		writeErr(w, http.StatusNotImplemented, "unavailable", "the apt integration is switched off")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -275,7 +275,7 @@ func (s *Server) handleLogSources(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.Features.Logs {
-		writeErr(w, http.StatusNotImplemented, "unavailable", "logs staan uit")
+		writeErr(w, http.StatusNotImplemented, "unavailable", "log access is switched off")
 		return
 	}
 	q := r.URL.Query()
@@ -296,11 +296,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleJobCreate(w http.ResponseWriter, r *http.Request) {
 	var req tools.JobRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_argument", "onleesbaar verzoek")
+		writeErr(w, http.StatusBadRequest, "invalid_argument", "could not read the request")
 		return
 	}
 	if req.Type == "speedtest" && !s.cfg.Features.Speedtest {
-		writeErr(w, http.StatusNotImplemented, "unavailable", "speedtest staat uit")
+		writeErr(w, http.StatusNotImplemented, "unavailable", "the speedtest is switched off")
 		return
 	}
 	if req.Type == "iperf3" && !tools.Has("iperf3") {
@@ -322,7 +322,7 @@ func (s *Server) handleJobCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleJobGet(w http.ResponseWriter, r *http.Request) {
 	job, ok := s.jobs.Get(r.PathValue("id"))
 	if !ok {
-		writeErr(w, http.StatusNotFound, "not_found", "taak niet gevonden")
+		writeErr(w, http.StatusNotFound, "not_found", "no job with that id")
 		return
 	}
 	writeJSON(w, job)

@@ -50,7 +50,7 @@ POST /v1/enroll
 ## 3.1 `GET /v1/health`
 
 ```json
-{ "ok": true, "version": "0.1.0", "uptime_s": 12843, "devices": 2 }
+{ "ok": true, "version": "0.2.12", "uptime_s": 12843, "devices": 2 }
 ```
 
 ## 3.2 `GET /v1/system` — static, 60 s cache
@@ -71,9 +71,10 @@ POST /v1/enroll
   "storage_total_bytes": 1999353413632,
   "boot_time": 1787241028,
   "uptime_s": 25400.2,
-  "capabilities": ["metrics","stream","sensors","processes","smart","speedtest.ookla",
-                   "whois","dns","ping","traceroute","disks","journal","apt"],
-  "agent_version": "0.1.0"
+  "capabilities": ["metrics","stream","update","sensors","gpu","processes","smart",
+                   "speedtest","iperf3","geekbench","whois","dns","ping","traceroute",
+                   "disks","journal","apt"],
+  "agent_version": "0.2.12"
 }
 ```
 
@@ -177,8 +178,13 @@ POST /v1/jobs
 { "type": "dns",        "target": "example.com", "record": "A", "server": "8.8.8.8" }
 { "type": "whois",      "target": "example.com" }
 { "type": "traceroute", "target": "1.1.1.1", "max_hops": 20 }
+{ "type": "iperf3",     "target": "192.168.1.50", "port": 5201 }
+{ "type": "geekbench" }
 → 202 { "job_id": "j_7f3a2c", "type": "speedtest", "state": "queued" }
 ```
+
+`iperf3` and `geekbench` are rejected with `501` when the tool isn't installed on that
+machine — see [02 §2.6.1](02-agent.md) for installing them.
 
 ```
 GET /v1/jobs/j_7f3a2c
@@ -189,18 +195,33 @@ GET /v1/jobs/j_7f3a2c
 
 `live_bps` and `samples` exist so the app can show throughput as it happens rather than a
 spinner. The agent reads the Ookla CLI's `jsonl` stream with
-`--progress-update-interval=200` and updates the job five times a second.
+`--progress-update-interval=200` and updates the job five times a second. iperf3 is read
+per second (`-i 1 --forceflush`; without that flag its output is block-buffered when it
+isn't writing to a terminal, and the whole run arrives in one burst at the end). Geekbench
+has no meaningful percentage, so it only reports `phase`: `single` or `multi`.
 
-Only one speedtest runs at a time — two would share the line and produce nonsense — but
-there is no artificial cooldown beyond that.
+```
+POST /v1/jobs/j_7f3a2c/cancel
+→ 204, or 404 when no job with that id is running
+```
+
+Cancelling kills the whole process group, not just the command that was started —
+Geekbench forks a worker per benchmark, and killing only the launcher leaves that worker
+running with the output pipe still open. The job then ends as `state: "failed"` with
+`cancelled: true`, which the app shows as "stopped" rather than as an error.
+
+Speedtest, iperf3 and Geekbench each run one at a time — they saturate a shared resource
+(the line, or every core), so two at once would produce nonsense. There is no artificial
+cooldown beyond that.
 
 ## 3.7 Rate limits
 
 | Group | Limit |
 |---|---|
-| Normal endpoints | 10 req/s per client, burst 30 |
-| `/v1/stream` | 4 concurrent per token |
-| `smart`, `updates` | cached 30–60 s |
-| `POST /v1/jobs` | 2 concurrent, one speedtest at a time |
+| Every authenticated endpoint | 10 req/s per client IP, burst 30 (token bucket) |
+| `POST /v1/jobs` | 2 jobs at a time, and one each of speedtest / iperf3 / geekbench |
 
-Exceeding them returns `429` with `Retry-After`.
+Exceeding the request rate returns `429` with `Retry-After`; asking for a job while the
+limit is reached returns `429` with the reason in the error message. Endpoints that shell
+out (`smart`, `updates`, `logs`) are not cached — they each carry their own timeout
+instead, so a slow disk or a stuck `apt` fails that one request rather than the agent.

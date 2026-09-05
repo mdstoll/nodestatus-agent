@@ -19,11 +19,13 @@ library.
 ## 2.2 Layout
 
 ```
-cmd/nodestatus-agent/   daemon + CLI (run, enroll, devices, bootstrap, version)
+cmd/nodestatus-agent/   daemon + CLI (run, enroll, devices, doctor, sudoers, extras,
+                        update, bootstrap, version)
 cmd/validate/           test client that mimics the app, including negative tests
 internal/collect/       sampler, /proc and /sys readers, GPU
 internal/api/           router, mTLS auth, SSE, enrollment
-internal/tools/         SMART, sensors, logs, apt, jobs (speedtest, ping, dns, whois)
+internal/tools/         SMART, sensors, logs, apt, jobs (speedtest, iperf3, geekbench,
+                        ping, dns, whois, traceroute)
 internal/pki/           CA, server certificate, client certificates
 internal/store/         devices.json, pairing window
 internal/control/       unix socket so the CLI can talk to the running daemon
@@ -46,6 +48,10 @@ nodestatus-agent enroll --new        open a pairing window, print code + QR
 nodestatus-agent enroll --cancel     close it
 nodestatus-agent devices list
 nodestatus-agent devices revoke <id>
+nodestatus-agent doctor              test every optional module and say why one is missing
+nodestatus-agent sudoers             print the sudoers rules this agent needs
+nodestatus-agent extras install <x>  install iperf3 / Geekbench / the optional packages
+nodestatus-agent update              install the latest release and restart the service
 nodestatus-agent bootstrap           create CA + server certificate (installer does this)
 ```
 
@@ -122,6 +128,11 @@ which only arrives via the sudoers rule for that one command.
 **`/etc` writable.** Only so the agent can renew its own server certificate before it
 expires after 397 days (see [07 §7.2](07-security.md)). In practice that is one write per year.
 
+The unit lists two supplementary groups; the installer grants two more to the service user
+itself with `usermod`: `disk`, so smartctl can reach a device node, and `video`, which
+`vcgencmd` needs on a Raspberry Pi to open `/dev/vchiq` — without it the Pi's GPU reads
+fail for the unprivileged agent while working fine as root.
+
 ## 2.6 Installing and removing
 
 ```bash
@@ -138,11 +149,28 @@ not come up it prints the last 20 journal lines instead of a bare failure.
 Removing it:
 
 ```bash
-sudo /usr/local/bin/uninstall.sh                          # keep config and pairings
-sudo /usr/local/bin/uninstall.sh --purge --remove-extras  # leave nothing behind
+sudo nodestatus-uninstall.sh                          # keep config and pairings
+sudo nodestatus-uninstall.sh --purge --remove-extras  # leave nothing behind
 ```
 
 The uninstaller always prints what it did **not** remove, so nothing lingers silently.
+
+## 2.6.1 Optional extras, after the fact
+
+`iperf3` and Geekbench are not part of the installer's package step: the first is only
+useful with a second machine to test against, the second is a ~220 MB download from
+Primate Labs rather than a distro package. Both are installed on request:
+
+```bash
+sudo nodestatus-agent extras install deps       # the same optional packages install.sh handles
+sudo nodestatus-agent extras install iperf3
+sudo nodestatus-agent extras install geekbench  # amd64 and arm64 only; no 32-bit build exists
+sudo nodestatus-agent extras install all
+```
+
+Restart the agent afterwards — `capabilities` is determined at startup, so until then the
+app won't offer the new tool. `nodestatus-agent doctor` tests every optional module on this
+machine and says per module whether it works, and if not, why and what to do about it.
 
 ## 2.7 Optional tools
 
@@ -157,13 +185,15 @@ capabilities rather than offering dead buttons.
 | Intel GPU load | `intel_gpu_top` | Falls back to an estimate from the clock frequency |
 | NVIDIA GPU | `nvidia-smi` | GPU section hidden |
 | Speed test | `speedtest` or `librespeed-cli` | Button disabled with an explanation |
+| Local throughput | `iperf3` | Network Speed hidden; install with `extras install iperf3` |
+| CPU benchmark | Geekbench 6 | Benchmark hidden; install with `extras install geekbench` |
 | WHOIS / DNS / traceroute | `whois`, `dig`, `traceroute` | Those tools return 501 |
 | QR code | `qrencode` | Pairing URL printed as text instead |
 
 ## 2.8 Releasing
 
 ```bash
-make release   # dist/nodestatus-agent_linux_{amd64,arm64}.tar.gz + SHA256SUMS
+make release   # dist/nodestatus-agent_linux_{amd64,386,arm64,arm}.tar.gz + SHA256SUMS
 ```
 
 Each tarball holds the binary, `install.sh`, `uninstall.sh` and the systemd unit. The same

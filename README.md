@@ -28,7 +28,8 @@ curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/insta
 ```
 
 The installer prints a pairing code and a QR code. Scan it in the app and you are done.
-Debian and Ubuntu on amd64 or arm64; systemd required, nothing else.
+Debian and Ubuntu on amd64, arm64, arm (Raspberry Pi Zero/1 up to a Pi 5 on a 32-bit OS)
+or 386; systemd required, nothing else.
 
 Manage it with:
 
@@ -38,8 +39,23 @@ nodestatus-agent --version
 sudo nodestatus-agent enroll --new
 sudo nodestatus-agent devices list
 sudo nodestatus-agent devices revoke <id>
+sudo nodestatus-agent doctor        # per-module check: what works here, and why not
 systemctl status nodestatus-agent
 ```
+
+### Optional extras
+
+Beyond the packages the installer already handles, two tools are fetched on request
+because they are large or not in the distro repositories:
+
+```bash
+sudo nodestatus-agent extras install iperf3      # local network throughput test
+sudo nodestatus-agent extras install geekbench   # CPU benchmark (amd64 and arm64 only)
+sudo nodestatus-agent extras install all
+```
+
+Restart the agent afterwards so it picks up what is newly available. Both show up in the
+app on their own once installed; without them the app simply doesn't offer them.
 
 ### Update the agent
 
@@ -61,7 +77,7 @@ curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/insta
 Remove it again — completely:
 
 ```bash
-sudo /usr/local/bin/uninstall.sh --purge --remove-extras
+sudo nodestatus-uninstall.sh --purge --remove-extras
 ```
 
 ---
@@ -89,9 +105,10 @@ connection that is already open. Full flow in [docs/07-security.md](docs/07-secu
 **Metrics** — CPU, RAM, storage and load as live gauges; a network chart with upload and
 download; temperature with history; every sensor the machine exposes.
 
-**Tools** — speed test with live throughput, ping, DNS, traceroute, WHOIS, per-core CPU
-detail, SMART health, network interfaces, a log analyzer over journald and plain log files,
-apt updates, locale, uptime, and a process list that flags zombie processes.
+**Tools** — internet speed test with live throughput, iperf3 against a machine of your own,
+a Geekbench CPU benchmark, ping, DNS, traceroute, WHOIS, per-core CPU detail, SMART health,
+network interfaces, a log analyzer over journald and plain log files, apt updates, locale,
+uptime, and a process list that flags zombie processes.
 
 **Settings** — units, history window, privacy, paired devices, and a language switch
 (English by default; Dutch appears when your device language is Dutch).
@@ -102,7 +119,7 @@ apt updates, locale, uptime, and a process list that flags zombie processes.
 
 | Decision | Choice | Why |
 |---|---|---|
-| Language | Go, no external dependencies | One static binary, ~7 MB, ~20 MB RSS, no runtime to install |
+| Language | Go, no external dependencies | One static binary, ~8 MB, ~20 MB RSS, no runtime to install |
 | Port | 29500/tcp | Unassigned at IANA, below Linux' ephemeral range, above 1024 |
 | Transport | Mutual TLS 1.3 with a per-server CA | Unpaired clients fail the handshake; nothing is disclosed |
 | Live data | Server-Sent Events at 1 Hz | One connection, built-in reconnect, kind to the battery |

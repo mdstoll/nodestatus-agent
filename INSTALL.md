@@ -16,8 +16,10 @@ Produces `agent/dist/`:
 
 | File | Size |
 |---|---|
-| `nodestatus-agent_linux_amd64.tar.gz` | ~3.0 MB |
-| `nodestatus-agent_linux_arm64.tar.gz` | ~2.7 MB |
+| `nodestatus-agent_linux_amd64.tar.gz` | ~3.3 MB |
+| `nodestatus-agent_linux_arm64.tar.gz` | ~2.9 MB |
+| `nodestatus-agent_linux_arm.tar.gz` | ~3.1 MB |
+| `nodestatus-agent_linux_386.tar.gz` | ~3.2 MB |
 | `SHA256SUMS` | — |
 
 Needs Go 1.24+ (`brew install go`) and nothing else.

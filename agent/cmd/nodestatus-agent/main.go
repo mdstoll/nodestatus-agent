@@ -78,7 +78,7 @@ func main() {
 		case "run":
 			// door naar run
 		default:
-			fmt.Fprintf(os.Stderr, "onbekend commando %q\n", cmd)
+			fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 			usage()
 			os.Exit(2)
 		}
