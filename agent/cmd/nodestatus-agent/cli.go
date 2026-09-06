@@ -342,7 +342,23 @@ func cmdExtras() {
 	}
 	if has("geekbench") {
 		fmt.Println("installing Geekbench…")
-		report(tools.InstallGeekbench(ctx))
+		step := tools.InstallGeekbench(ctx)
+		report(step)
+		// Meteen zeggen, niet pas na vijf minuten benchmarken: onder de
+		// standaard unit sneuvelt Geekbench halverwege op precies deze regel.
+		if step.OK && tools.UnitHasMDWE() {
+			fmt.Println()
+			fmt.Println("  \033[0;33m!\033[0m Geekbench cannot run under the agent as installed.")
+			fmt.Println("    Its workloads need memory that is both writable and executable,")
+			fmt.Println("    which MemoryDenyWriteExecute=yes in the unit forbids — a run dies")
+			fmt.Println("    halfway with \"Permission denied\". To allow it:")
+			fmt.Println()
+			fmt.Println("      sudo sed -i '/^MemoryDenyWriteExecute=/d' " + tools.UnitPath)
+			fmt.Println("      sudo systemctl daemon-reload && sudo systemctl restart nodestatus-agent")
+			fmt.Println()
+			fmt.Println("    That drops one hardening measure for the whole agent. Leave it in")
+			fmt.Println("    place if you would rather not, and skip the benchmark on this node.")
+		}
 	}
 	fmt.Println("\nRestart the agent so it picks up what's newly available:")
 	fmt.Println("  sudo systemctl restart nodestatus-agent")

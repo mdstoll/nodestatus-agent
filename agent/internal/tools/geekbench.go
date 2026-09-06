@@ -115,6 +115,11 @@ func (r *Runner) geekbenchJob(ctx context.Context, id string) (any, error) {
 func gbFailure(tail []string) string {
 	for i := len(tail) - 1; i >= 0; i-- {
 		line := tail[i]
+		// "Internal error message: Permission denied." staat op een eigen regel,
+		// ná de regel met "error" erin, dus die pakken we apart op.
+		if strings.Contains(line, "Permission denied") {
+			return line + " — " + mdweHint
+		}
 		if !strings.Contains(strings.ToLower(line), "error") {
 			continue
 		}
@@ -127,6 +132,15 @@ func gbFailure(tail []string) string {
 	}
 	return ""
 }
+
+// Geekbench sneuvelt halverwege de single-core suite (bij Asset Compression)
+// met "Permission denied" zodra MemoryDenyWriteExecute aanstaat: een van zijn
+// workloads wil geheugen dat tegelijk schrijfbaar en uitvoerbaar is, en dat is
+// precies wat die instelling verbiedt. Onze eigen unit zet hem, dus deze hint
+// is geen gok maar de bekende oorzaak.
+const mdweHint = "the agent's systemd unit sets MemoryDenyWriteExecute=yes, " +
+	"which blocks a memory mapping Geekbench needs. Remove that line from " +
+	"/etc/systemd/system/nodestatus-agent.service to allow the benchmark"
 
 var gbCurlCodeRe = regexp.MustCompile(`internal code (\d+)`)
 

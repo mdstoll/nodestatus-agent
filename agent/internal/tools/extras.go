@@ -277,3 +277,23 @@ func isWithin(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
+
+// UnitPath is waar install.sh de systemd-unit neerzet.
+const UnitPath = "/etc/systemd/system/nodestatus-agent.service"
+
+// UnitHasMDWE zegt of de geïnstalleerde unit MemoryDenyWriteExecute aan heeft
+// staan. Geekbench kan daar niet onder draaien (zie mdweHint), en dat is
+// beter te melden bij het installeren dan pas als een run halverwege sneuvelt.
+func UnitHasMDWE() bool {
+	b, err := os.ReadFile(UnitPath)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "MemoryDenyWriteExecute=") {
+			return strings.EqualFold(strings.TrimPrefix(line, "MemoryDenyWriteExecute="), "yes")
+		}
+	}
+	return false
+}

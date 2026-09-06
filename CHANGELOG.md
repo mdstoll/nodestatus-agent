@@ -6,6 +6,27 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.16 — 2026-09-06
+
+### Fixed
+- **The benchmark never got past the seventh workload under the agent**, and
+  said only "exit status 255". The agent's own systemd unit sets
+  `MemoryDenyWriteExecute=yes`; one of Geekbench's workloads (Asset
+  Compression) wants memory that is both writable and executable, which that
+  setting forbids, so the run dies with "Permission denied". Confirmed by
+  isolating the property: that one line alone reproduces it, and without it a
+  full run completes and uploads.
+
+  The agent cannot lift the restriction for a child — seccomp filters are
+  inherited — so the error now names the cause and the exact line to remove,
+  and `extras install geekbench` warns about it up front instead of letting
+  you find out after five minutes of benchmarking.
+
+### Note
+This is a trade-off, not something the agent decides for you: removing that
+line drops one hardening measure for the whole agent. Leave it in place and
+the benchmark cannot run on that node.
+
 ## v0.2.15 / App v0.2.9 — 2026-09-06
 
 ### Fixed
