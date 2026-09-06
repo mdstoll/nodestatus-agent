@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // GeekbenchResult komt terug zodra de run klaar is; dit is de samenvatting
@@ -61,10 +62,20 @@ func (r *Runner) geekbenchJob(ctx context.Context, id string) (any, error) {
 
 	r.progress(id, "single", 0, 0, 0)
 	var res GeekbenchResult
+	// Laatste regels vasthouden: als Geekbench faalt staat de reden in zijn
+	// eigen output, en zonder dit bleef er voor de gebruiker niets over dan
+	// "exit status 255" — een getal waar niemand iets aan heeft.
+	var tail []string
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	for sc.Scan() {
 		line := sc.Text()
+		if t := strings.TrimSpace(line); t != "" {
+			tail = append(tail, t)
+			if len(tail) > 12 {
+				tail = tail[1:]
+			}
+		}
 		if m := gbSectionRe.FindStringSubmatch(line); m != nil {
 			phase := "single"
 			if m[1] == "Multi-Core" {
@@ -86,10 +97,45 @@ func (r *Runner) geekbenchJob(ctx context.Context, id string) (any, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err() // gestopt door de gebruiker, niet mislukt
 		}
+		if msg := gbFailure(tail); msg != "" {
+			return nil, fmt.Errorf("geekbench: %s", msg)
+		}
 		return nil, fmt.Errorf("geekbench: %v", err)
 	}
 	if res.ResultURL == "" && res.SingleCore == 0 && res.MultiCore == 0 {
 		return nil, fmt.Errorf("geekbench produced no readable result")
 	}
 	return res, nil
+}
+
+// gbFailure haalt uit de laatste regels output de regel die zegt wát er mis
+// ging. Geekbench meldt een mislukte upload als "unknown error (internal code
+// 35)" — dat getal is een libcurl-code, dus voor de bekende gevallen zetten we
+// er iets bij waar een mens wél iets aan heeft.
+func gbFailure(tail []string) string {
+	for i := len(tail) - 1; i >= 0; i-- {
+		line := tail[i]
+		if !strings.Contains(strings.ToLower(line), "error") {
+			continue
+		}
+		if m := gbCurlCodeRe.FindStringSubmatch(line); m != nil {
+			if hint, ok := curlHints[m[1]]; ok {
+				return line + " — " + hint
+			}
+		}
+		return line
+	}
+	return ""
+}
+
+var gbCurlCodeRe = regexp.MustCompile(`internal code (\d+)`)
+
+// De libcurl-codes die bij het uploaden van een resultaat realistisch zijn.
+// Geekbench print alleen het nummer; dit vertaalt het naar de oorzaak.
+var curlHints = map[string]string{
+	"6":  "could not resolve the Geekbench host (DNS)",
+	"7":  "could not connect to the Geekbench server",
+	"28": "the upload timed out",
+	"35": "TLS handshake with the Geekbench server failed",
+	"60": "could not verify the Geekbench server's certificate",
 }

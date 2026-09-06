@@ -6,6 +6,33 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.15 / App v0.2.9 — 2026-09-06
+
+### Fixed
+- **The benchmark failed with "geekbench: exit status 255".** Primate Labs
+  moved the Geekbench Browser behind a Cloudflare challenge, which broke the
+  upload in every build before 6.7.1: the run computed both suites and then
+  died with "unknown error (internal code 35)" — libcurl's TLS-connect error.
+  Since the free flow prints no scores until the upload succeeds, five minutes
+  of benchmarking were lost with it. The pinned version is 6.7.1 now, which is
+  their own fix; verified end to end on a real node, as the agent's own service
+  user and environment.
+- **A failing Geekbench run said nothing useful.** Its output was scanned for
+  scores and then thrown away, so all that reached the app was the exit code.
+  The last lines are kept now, and the known libcurl codes it hides behind
+  "internal code N" are spelled out (DNS, connect, timeout, TLS, certificate).
+
+### Changed
+- Installing Geekbench removes the previously unpacked version. Each one is
+  close to 500 MB, so every version bump used to leave half a gigabyte behind
+  on a machine that is sometimes a Pi with an SD card.
+- `doctor` distinguishes "Geekbench is not installed" from "an older Geekbench
+  is installed but a newer one is required", instead of reporting a machine
+  with a visible Geekbench as empty.
+- The app no longer shows an empty score row when a run only yields a link.
+  The free Geekbench flow never prints the numbers — they live in the Browser
+  — so that is now what the result says.
+
 ## v0.2.14 — 2026-09-06
 
 ### Changed

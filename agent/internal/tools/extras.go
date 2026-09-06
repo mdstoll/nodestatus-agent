@@ -43,8 +43,36 @@ func probeGeekbench(ctx context.Context) Capability {
 	if !geekbenchSupported() {
 		return Capability{ID: "geekbench", Reason: "no Geekbench build exists for this architecture (" + runtime.GOARCH + ")"}
 	}
+	// Een oudere versie staat er nog: zeg dát, in plaats van "niet
+	// geïnstalleerd". Anders lijkt een machine waar Geekbench duidelijk
+	// aanwezig is toch leeg, en is niet te raden waarom.
+	if old := installedGeekbenchVersion(); old != "" {
+		return Capability{ID: "geekbench",
+			Reason: "Geekbench " + old + " is installed, but " + geekbenchVersion + " is required",
+			Fix:    "sudo nodestatus-agent extras install geekbench"}
+	}
 	return Capability{ID: "geekbench", Reason: "Geekbench is not installed",
 		Fix: "sudo nodestatus-agent extras install geekbench"}
+}
+
+// installedGeekbenchVersion leest de versie uit de naam van een uitgepakte
+// map ("Geekbench-6.7.0-Linux"). Leeg als er geen enkele staat.
+func installedGeekbenchVersion() string {
+	entries, err := os.ReadDir(geekbenchExtrasDir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if rest, ok := strings.CutPrefix(e.Name(), "Geekbench-"); ok {
+			if v, _, ok := strings.Cut(rest, "-"); ok {
+				return v
+			}
+		}
+	}
+	return ""
 }
 
 // ---------- installation ----------
@@ -106,7 +134,14 @@ const geekbenchExtrasDir = "/opt/nodestatus-agent/extras/geekbench"
 // "latest" URL (see the download function below), so this needs a manual
 // bump when a newer release is worth picking up. Bump both together: the
 // stable and preview builds are versioned in lockstep.
-const geekbenchVersion = "6.7.0"
+//
+// 6.7.0 → 6.7.1 was not optional: Primate Labs moved the Geekbench Browser
+// behind a Cloudflare challenge, which broke the upload in every earlier
+// build. A run would compute both suites and then die with "unknown error
+// (internal code 35)" — and since the free flow prints no scores until the
+// upload succeeds, five minutes of benchmarking were lost with it. 6.7.1 is
+// their own fix for it.
+const geekbenchVersion = "6.7.1"
 
 func geekbenchSupported() bool {
 	return runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64"
@@ -174,7 +209,28 @@ func InstallGeekbench(ctx context.Context) InstallStep {
 	if err := os.Chmod(bin, 0o755); err != nil {
 		return InstallStep{Name: "geekbench", Note: "extracted, but couldn't make it executable: " + err.Error()}
 	}
+	removeOldGeekbenchDirs(geekbenchExtrasDir, filepath.Dir(bin))
 	return InstallStep{Name: "geekbench", OK: true}
+}
+
+// removeOldGeekbenchDirs ruimt de uitgepakte mappen van eerdere versies op.
+// Elke versie is bijna 500 MB en komt in zijn eigen map te staan, dus zonder
+// dit laat elke versiebump een halve gigabyte achter op een machine die soms
+// een Raspberry Pi met een SD-kaart is. Alleen mappen die er zelf uitzien als
+// een Geekbench-uitpak, en nooit degene die we net hebben neergezet.
+func removeOldGeekbenchDirs(root, keep string) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), "Geekbench-") {
+			continue
+		}
+		if p := filepath.Join(root, e.Name()); p != keep {
+			os.RemoveAll(p)
+		}
+	}
 }
 
 // extractTarGz is a plain, non-symlink-following extractor: Geekbench's own
