@@ -180,10 +180,14 @@ func jobTimeout(t string) time.Duration {
 	case "traceroute":
 		return 60 * time.Second
 	case "geekbench":
-		// Het volledige CPU-pakket (single + multi-core) duurt op trage
-		// hardware (een Pi) ruim over een minuut; 10 minuten is ruim
-		// genoeg zonder een vastgelopen run voor altijd te laten draaien.
-		return 10 * time.Minute
+		// Het volledige pakket is twintig workloads, twee keer: single-core
+		// en dan multi-core, plus de upload. Op een Intel N100 duurt dat ruim
+		// tien minuten, en dat is bepaald geen trage machine — de 10 minuten
+		// die hier eerst stonden kapten een verder geslaagde run af vlak voor
+		// het eind. Een halfuur is ruim genoeg voor de trage kant (een Pi 4)
+		// zonder een vastgelopen run voor altijd te laten draaien; de
+		// gebruiker kan zelf altijd stoppen.
+		return 30 * time.Minute
 	case "iperf3":
 		// Twee richtingen van 10 s elk (iperf3Direction's eigen "duration"),
 		// plus verbindingsopzet per richting — 30 s was te krap en liet de

@@ -6,6 +6,17 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.17 — 2026-09-07
+
+### Fixed
+- **A benchmark that got all the way through was still cut off**, with
+  "context deadline exceeded". The job timeout was 10 minutes; a full
+  Geekbench run is twenty workloads twice over plus the upload, which takes
+  about 9 minutes on an Intel N100 — and roughly twice that under the unit's
+  `MemoryMax=128M`, because Geekbench's 316 MB workload file cannot stay in a
+  128 MB cgroup and thrashes. Raised to 30 minutes, which covers the slow case
+  on a Pi 4 as well. Stopping from the app still works at any point.
+
 ## v0.2.16 — 2026-09-06
 
 ### Fixed
