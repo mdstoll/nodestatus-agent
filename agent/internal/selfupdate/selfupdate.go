@@ -315,12 +315,22 @@ func replaceBinary(src, dest string) error {
 	if err != nil {
 		return err
 	}
+	// Bij elke fout het halve bestand opruimen. Een volle schijf liet hier
+	// eerst een leeg "nodestatus-agent.new" van 0 bytes achter in /usr/local/bin.
 	if _, err := io.Copy(out, in); err != nil {
 		out.Close()
+		os.Remove(tmp)
 		return err
 	}
-	out.Close()
-	return os.Rename(tmp, dest)
+	if err := out.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // RestartService restarts the systemd unit so the new binary takes over.
