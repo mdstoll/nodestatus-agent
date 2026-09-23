@@ -112,7 +112,7 @@ MemoryMax=128M
 TasksMax=64
 ```
 
-Three of these deserve an explanation, because they are all trade-offs rather than defaults:
+Four of these deserve an explanation, because they are all trade-offs rather than defaults:
 
 **`NoNewPrivileges=no`.** NVMe SMART needs `CAP_SYS_ADMIN` through `NVME_IOCTL_ADMIN_CMD`.
 The two ways to get it were granting the agent that capability outright — near-root for the
@@ -124,6 +124,18 @@ The second is much narrower even though the audit flag looks worse.
 utilisation. Without it the child is killed with SIGSYS, which surfaces as the delightfully
 unhelpful "bad system call". The agent gains nothing from the syscall without CAP_PERFMON,
 which only arrives via the sudoers rule for that one command.
+
+**`MemoryDenyWriteExecute=yes`.** Blocks memory that is writable and executable at once —
+a classic exploit primitive the agent itself never needs. Geekbench does: one of its
+workloads dies halfway with "Permission denied" under this setting. The agent keeps it on
+by default; on a node where you want the benchmark, lift it with a drop-in, which survives
+reinstalls and updates (they replace the unit, never the `.d` directory):
+
+```bash
+sudo mkdir -p /etc/systemd/system/nodestatus-agent.service.d
+printf '[Service]\nMemoryDenyWriteExecute=no\n' | sudo tee /etc/systemd/system/nodestatus-agent.service.d/geekbench.conf
+sudo systemctl daemon-reload && sudo systemctl restart nodestatus-agent
+```
 
 **`/etc` writable.** Only so the agent can renew its own server certificate before it
 expires after 397 days (see [07 §7.2](07-security.md)). In practice that is one write per year.

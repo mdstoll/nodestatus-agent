@@ -105,7 +105,13 @@ func (s *Store) Lookup(fp string) (*Device, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	d, ok := s.devices[fp]
-	return d, ok
+	if !ok {
+		return nil, false
+	}
+	// Een kopie: de aanroeper houdt hem de hele request vast, buiten de lock,
+	// terwijl Touch en Replace het origineel intussen bijwerken.
+	c := *d
+	return &c, true
 }
 
 func (s *Store) VerifyToken(d *Device, token string) bool {
@@ -165,17 +171,35 @@ func (s *Store) Replace(oldFP, newFP string, expires time.Time) (*Device, error)
 	return d, s.save()
 }
 
+// Revoke trekt een apparaat in op ID, of op naam als die uniek is. Eerder won
+// bij twee toestellen met dezelfde naam (twee keer "iPhone" is de standaard)
+// willekeurig één van beide — de map-volgorde in Go is bewust random — en kon
+// je dus het verkeerde toestel eruit gooien.
 func (s *Store) Revoke(id string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for fp, d := range s.devices {
-		if d.ID == id || strings.EqualFold(d.Name, id) {
-			name := d.Name
+		if d.ID == id {
 			delete(s.devices, fp)
-			return name, s.save()
+			return d.Name, s.save()
 		}
 	}
-	return "", fmt.Errorf("device %q not found", id)
+	var hits []string
+	for fp, d := range s.devices {
+		if strings.EqualFold(d.Name, id) {
+			hits = append(hits, fp)
+		}
+	}
+	switch len(hits) {
+	case 0:
+		return "", fmt.Errorf("device %q not found", id)
+	case 1:
+		name := s.devices[hits[0]].Name
+		delete(s.devices, hits[0])
+		return name, s.save()
+	default:
+		return "", fmt.Errorf("%d devices are named %q — revoke by ID instead (see: nodestatus-agent devices list)", len(hits), id)
+	}
 }
 
 // ---- enrollment-venster ----

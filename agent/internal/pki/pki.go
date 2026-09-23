@@ -105,17 +105,18 @@ const ServerCertDays = 397
 const renewBefore = 30 * 24 * time.Hour
 
 // EnsureServerCert maakt of vernieuwt het servercertificaat met SAN's voor
-// alle lokale adressen plus de hostname. Geeft true terug als er iets is
-// geschreven.
+// alle lokale adressen plus de hostname.
 func (ca *CA) EnsureServerCert(certPath, keyPath string, force bool) error {
 	_, err := ca.ensureServerCert(certPath, keyPath, force)
 	return err
 }
 
 func (ca *CA) ensureServerCert(certPath, keyPath string, force bool) (bool, error) {
+	host, _ := os.Hostname()
+	dns, ips := localNames(host)
 	if !force {
 		if b, err := os.ReadFile(certPath); err == nil {
-			if c, err := parseCertPEM(b); err == nil && time.Now().Before(c.NotAfter.Add(-renewBefore)) {
+			if c, err := parseCertPEM(b); err == nil && time.Now().Before(c.NotAfter.Add(-renewBefore)) && covers(c, dns, ips) {
 				if _, err := os.Stat(keyPath); err == nil {
 					return false, nil
 				}
@@ -125,19 +126,6 @@ func (ca *CA) ensureServerCert(certPath, keyPath string, force bool) (bool, erro
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return false, err
-	}
-	host, _ := os.Hostname()
-	dns := []string{"localhost"}
-	if host != "" {
-		dns = append(dns, host, host+".local")
-	}
-	ips := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
-	if addrs, err := net.InterfaceAddrs(); err == nil {
-		for _, a := range addrs {
-			if ipn, ok := a.(*net.IPNet); ok && !ipn.IP.IsLoopback() {
-				ips = append(ips, ipn.IP)
-			}
-		}
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial(),
@@ -171,6 +159,65 @@ func (ca *CA) ensureServerCert(certPath, keyPath string, force bool) (bool, erro
 		return false, err
 	}
 	return true, nil
+}
+
+// localNames geeft de namen en adressen waarop deze machine bereikbaar is en
+// die dus in het servercertificaat horen. IPv6 link-local (fe80::) valt af:
+// zonder zone-id is dat geen bruikbaar URL-adres. IPv4 link-local blijft wél
+// staan — dat kan het enige adres zijn dat de koppel-QR aanbiedt.
+func localNames(host string) ([]string, []net.IP) {
+	dns := []string{"localhost"}
+	if host != "" {
+		dns = append(dns, host, host+".local")
+	}
+	ips := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
+	if addrs, err := net.InterfaceAddrs(); err == nil {
+		for _, a := range addrs {
+			if ipn, ok := a.(*net.IPNet); ok && !ipn.IP.IsLoopback() &&
+				!(ipn.IP.To4() == nil && ipn.IP.IsLinkLocalUnicast()) {
+				ips = append(ips, ipn.IP)
+			}
+		}
+	}
+	return dns, ips
+}
+
+// covers zegt of het certificaat alle huidige namen en IPv4-adressen dekt.
+// De SAN's werden alleen bij aanmaken vastgelegd; kreeg de node daarna via
+// DHCP een ander adres, dan weigerde de app de verbinding (de hostnaamcheck
+// faalt) tot het certificaat een jaar later toevallig vernieuwd werd.
+// IPv6 telt hier bewust niet mee: privacy-adressen roteren dagelijks, en
+// daarvoor steeds opnieuw uitgeven levert niets op — de app verbindt met het
+// adres uit de koppel-QR, en dat is in de praktijk IPv4 of een hostnaam.
+func covers(c *x509.Certificate, dns []string, ips []net.IP) bool {
+	for _, want := range dns {
+		found := false
+		for _, have := range c.DNSNames {
+			if strings.EqualFold(want, have) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	for _, want := range ips {
+		if want.To4() == nil {
+			continue
+		}
+		found := false
+		for _, have := range c.IPAddresses {
+			if want.Equal(have) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // CertManager houdt het actieve servercertificaat vast en vernieuwt het
@@ -211,7 +258,8 @@ func (m *CertManager) reload() error {
 	return nil
 }
 
-// MaybeRenew vernieuwt het certificaat als het binnen 30 dagen verloopt.
+// MaybeRenew vernieuwt het certificaat als het binnen 30 dagen verloopt, of
+// als de machine inmiddels een naam of IPv4-adres heeft dat er niet in staat.
 func (m *CertManager) MaybeRenew() (bool, error) {
 	renewed, err := m.ca.ensureServerCert(m.certPath, m.keyPath, false)
 	if err != nil || !renewed {
@@ -293,12 +341,12 @@ func parseECKeyPEM(b []byte) (*ecdsa.PrivateKey, error) {
 // zoals iOS die exporteert met SecKeyCopyExternalRepresentation.
 func ParseP256PublicKey(raw []byte) (*ecdsa.PublicKey, error) {
 	if len(raw) != 65 || raw[0] != 0x04 {
-		return nil, fmt.Errorf("verwacht 65-byte uncompressed P-256 punt, kreeg %d bytes", len(raw))
+		return nil, fmt.Errorf("expected a 65-byte uncompressed P-256 point, got %d bytes", len(raw))
 	}
 	x := new(big.Int).SetBytes(raw[1:33])
 	y := new(big.Int).SetBytes(raw[33:65])
 	if !elliptic.P256().IsOnCurve(x, y) {
-		return nil, fmt.Errorf("punt ligt niet op de P-256 curve")
+		return nil, fmt.Errorf("the public key is not a point on the P-256 curve")
 	}
 	return &ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}, nil
 }

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -319,7 +320,9 @@ func cmdExtras() {
 		return false
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	// Ruim: apt-get update plus negen pakketten plus een Geekbench-download van
+	// honderden MB haalde de oude zes minuten op een Pi met trage SD niet.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
 	report := func(step tools.InstallStep) {
@@ -353,11 +356,13 @@ func cmdExtras() {
 			fmt.Println("    which MemoryDenyWriteExecute=yes in the unit forbids — a run dies")
 			fmt.Println("    halfway with \"Permission denied\". To allow it:")
 			fmt.Println()
-			fmt.Println("      sudo sed -i '/^MemoryDenyWriteExecute=/d' " + tools.UnitPath)
+			fmt.Println("      sudo mkdir -p " + filepath.Dir(tools.MDWEDropIn))
+			fmt.Println("      printf '[Service]\\nMemoryDenyWriteExecute=no\\n' | sudo tee " + tools.MDWEDropIn)
 			fmt.Println("      sudo systemctl daemon-reload && sudo systemctl restart nodestatus-agent")
 			fmt.Println()
-			fmt.Println("    That drops one hardening measure for the whole agent. Leave it in")
-			fmt.Println("    place if you would rather not, and skip the benchmark on this node.")
+			fmt.Println("    A drop-in survives reinstalls and updates, which replace the unit")
+			fmt.Println("    itself. It does drop one hardening measure for the whole agent —")
+			fmt.Println("    leave it out if you would rather skip the benchmark on this node.")
 		}
 	}
 	fmt.Println("\nRestart the agent so it picks up what's newly available:")

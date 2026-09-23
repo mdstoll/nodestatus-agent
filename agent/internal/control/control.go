@@ -105,7 +105,7 @@ func (s *Server) handle(c net.Conn) {
 		}})
 	case "enroll-cancel":
 		s.store.CloseEnrollment()
-		writeResp(c, Response{OK: true, Message: "koppelvenster gesloten"})
+		writeResp(c, Response{OK: true, Message: "pairing window closed"})
 	case "devices-list":
 		writeResp(c, Response{OK: true, Data: s.store.List()})
 	case "devices-revoke":

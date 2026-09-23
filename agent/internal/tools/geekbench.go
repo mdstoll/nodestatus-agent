@@ -139,8 +139,8 @@ func gbFailure(tail []string) string {
 // precies wat die instelling verbiedt. Onze eigen unit zet hem, dus deze hint
 // is geen gok maar de bekende oorzaak.
 const mdweHint = "the agent's systemd unit sets MemoryDenyWriteExecute=yes, " +
-	"which blocks a memory mapping Geekbench needs. Remove that line from " +
-	"/etc/systemd/system/nodestatus-agent.service to allow the benchmark"
+	"which blocks a memory mapping Geekbench needs. See `nodestatus-agent extras " +
+	"install geekbench` for the drop-in that allows it on this node"
 
 var gbCurlCodeRe = regexp.MustCompile(`internal code (\d+)`)
 

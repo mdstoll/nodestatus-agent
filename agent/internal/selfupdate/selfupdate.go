@@ -118,14 +118,13 @@ func Check(currentVersion string) CheckResult {
 	return res
 }
 
+// archName moet precies de architecturen kennen die `make release` bouwt;
+// 386 ontbrak hier, waardoor `update` op 32-bit x86 weigerde terwijl de
+// release er gewoon was.
 func archName() (string, error) {
 	switch runtime.GOARCH {
-	case "amd64":
-		return "amd64", nil
-	case "arm64":
-		return "arm64", nil
-	case "arm":
-		return "arm", nil
+	case "amd64", "arm64", "arm", "386":
+		return runtime.GOARCH, nil
 	default:
 		return "", fmt.Errorf("no release is published for %s", runtime.GOARCH)
 	}
@@ -162,6 +161,13 @@ func Apply(currentVersion string) (newVersion string, err error) {
 	if tarballURL == "" {
 		return "", fmt.Errorf("release %s has no asset for this architecture (%s)", r.TagName, arch)
 	}
+	// Zonder SHA256SUMS niet installeren. Dit vervangt als root het binary
+	// dat een netwerkdienst draait; stil doorgaan zonder controle — wat hier
+	// eerst gebeurde als het bestand ontbrak — is precies het geval waarin
+	// je wílt stoppen. Elke release publiceert hem.
+	if sumsURL == "" {
+		return "", fmt.Errorf("release %s has no SHA256SUMS — refusing to install an unverified binary", r.TagName)
+	}
 
 	tmpDir, err := os.MkdirTemp("", "nodestatus-update-*")
 	if err != nil {
@@ -174,14 +180,12 @@ func Apply(currentVersion string) (newVersion string, err error) {
 		return "", fmt.Errorf("download failed: %w", err)
 	}
 
-	if sumsURL != "" {
-		sumsPath := filepath.Join(tmpDir, "SHA256SUMS")
-		if err := download(sumsURL, sumsPath); err != nil {
-			return "", fmt.Errorf("could not fetch SHA256SUMS: %w", err)
-		}
-		if err := verify(tarPath, tarballName, sumsPath); err != nil {
-			return "", err
-		}
+	sumsPath := filepath.Join(tmpDir, "SHA256SUMS")
+	if err := download(sumsURL, sumsPath); err != nil {
+		return "", fmt.Errorf("could not fetch SHA256SUMS: %w", err)
+	}
+	if err := verify(tarPath, tarballName, sumsPath); err != nil {
+		return "", err
 	}
 
 	binPath, err := extractBinary(tarPath, tmpDir)

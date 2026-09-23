@@ -181,7 +181,7 @@ func InstallGeekbench(ctx context.Context) InstallStep {
 		return InstallStep{Name: "geekbench", Note: err.Error()}
 	}
 
-	dlCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	dlCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
 	req, err := http.NewRequestWithContext(dlCtx, http.MethodGet, url, nil)
 	if err != nil {
@@ -278,21 +278,34 @@ func isWithin(root, path string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// UnitPath is waar install.sh de systemd-unit neerzet.
+// UnitPath is waar install.sh de systemd-unit neerzet. Dit bestand wordt bij
+// elke herinstallatie overschreven; aanpassingen horen daarom in een drop-in
+// (MDWEDropIn), niet in de unit zelf.
 const UnitPath = "/etc/systemd/system/nodestatus-agent.service"
 
-// UnitHasMDWE zegt of de geïnstalleerde unit MemoryDenyWriteExecute aan heeft
-// staan. Geekbench kan daar niet onder draaien (zie mdweHint), en dat is
-// beter te melden bij het installeren dan pas als een run halverwege sneuvelt.
+// MDWEDropIn is de drop-in die MemoryDenyWriteExecute voor deze node uitzet.
+// Eerder adviseerden we de regel uit de unit te sed'en — maar install.sh
+// vervangt die unit bij elke run, dus de benchmark ging na een herinstallatie
+// stilletjes weer stuk. Een drop-in in de .d-map blijft staan.
+const MDWEDropIn = UnitPath + ".d/geekbench.conf"
+
+// UnitHasMDWE zegt of MemoryDenyWriteExecute effectief aanstaat voor de
+// service. Via systemctl, zodat drop-ins meetellen; alleen als dat niet lukt
+// (geen systemd, of niet als root) valt hij terug op de unit zelf.
 func UnitHasMDWE() bool {
+	if out, err := exec.Command("systemctl", "show", "-p", "MemoryDenyWriteExecute",
+		"--value", "nodestatus-agent").Output(); err == nil {
+		if v := strings.TrimSpace(string(out)); v != "" {
+			return v == "yes"
+		}
+	}
 	b, err := os.ReadFile(UnitPath)
 	if err != nil {
 		return false
 	}
 	for _, line := range strings.Split(string(b), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "MemoryDenyWriteExecute=") {
-			return strings.EqualFold(strings.TrimPrefix(line, "MemoryDenyWriteExecute="), "yes")
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "MemoryDenyWriteExecute="); ok {
+			return strings.EqualFold(v, "yes")
 		}
 	}
 	return false

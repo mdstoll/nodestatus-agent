@@ -7,7 +7,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 )
 
 // ---------- CPU ----------
@@ -207,6 +209,60 @@ func readMounts() []mountEntry {
 	return out
 }
 
+// statfs op een netwerkmount kan blokkeren zolang de server weg is: tientallen
+// seconden op een "soft" CIFS-mount, eindeloos op een "hard" NFS-mount. Dat
+// gebeurde in de sampler-tick zelf, dus de hele live-stream bevroor — en
+// System() deed hetzelfde terwijl het zijn mutex vasthield, waardoor zelfs
+// koppelen bleef hangen. Nu krijgt elke netwerkmount één statfs tegelijk met
+// een korte wachttijd; loopt die uit, dan geldt de laatst bekende waarde en
+// komt er niet elke seconde een nieuwe vastlopende goroutine bij.
+type remoteStat struct {
+	pending bool
+	st      syscall.Statfs_t
+	ok      bool
+}
+
+var (
+	remoteMu    sync.Mutex
+	remoteStats = map[string]*remoteStat{}
+)
+
+const remoteStatTimeout = 500 * time.Millisecond
+
+func statfsRemote(path string) (syscall.Statfs_t, bool) {
+	remoteMu.Lock()
+	rs := remoteStats[path]
+	if rs == nil {
+		rs = &remoteStat{}
+		remoteStats[path] = rs
+	}
+	if rs.pending {
+		st, ok := rs.st, rs.ok
+		remoteMu.Unlock()
+		return st, ok
+	}
+	rs.pending = true
+	remoteMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		var st syscall.Statfs_t
+		err := syscall.Statfs(path, &st)
+		remoteMu.Lock()
+		rs.pending = false
+		rs.st, rs.ok = st, err == nil
+		remoteMu.Unlock()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(remoteStatTimeout):
+	}
+	remoteMu.Lock()
+	defer remoteMu.Unlock()
+	return rs.st, rs.ok
+}
+
 func unescapeMount(s string) string {
 	return strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`).Replace(s)
 }
@@ -216,7 +272,12 @@ func storageSamples(io map[string]diskIO) []StorageSample {
 	seenDev := map[string]bool{}
 	for _, m := range readMounts() {
 		var st syscall.Statfs_t
-		if err := syscall.Statfs(m.mount, &st); err != nil {
+		if isRemoteFS(m.fstype) {
+			var ok bool
+			if st, ok = statfsRemote(m.mount); !ok {
+				continue
+			}
+		} else if err := syscall.Statfs(m.mount, &st); err != nil {
 			continue
 		}
 		total := st.Blocks * uint64(st.Bsize)

@@ -6,6 +6,65 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.18 / App v0.2.10 — 2026-09-23
+
+### Security
+- **Pairing could be intercepted by anyone on the path.** The app accepted the
+  server if the CA from the QR code appeared *anywhere* in the presented chain
+  — but that CA certificate is public, so a man-in-the-middle could append it
+  to their own certificate and receive the pairing code. The app now anchors
+  on that CA alone and has the chain actually validated, the same check every
+  request after pairing already made.
+- **`install.sh` and `nodestatus-agent update` refuse a release without
+  `SHA256SUMS`** instead of installing it unverified. A missing checksum and a
+  stripped one are indistinguishable from the client side.
+
+### Fixed
+- **The Geekbench workaround no longer disappears on reinstall.** The advice
+  was to delete `MemoryDenyWriteExecute=yes` from the unit, which `install.sh`
+  replaces on every run. It is now a systemd drop-in
+  (`nodestatus-agent.service.d/geekbench.conf`) that survives reinstalls and
+  updates; `install.sh` converts an existing hand-edited unit into that
+  drop-in automatically, and the check reads systemd's effective value.
+- **A node that got a new IP address was locked out** until its certificate
+  happened to renew a year later: the certificate's addresses were only
+  set when it was created. The agent now reissues it when a hostname or IPv4
+  address is missing (checked at startup and every 12 hours).
+- **A hung NFS/CIFS mount could freeze the whole status feed.** Disk usage
+  for network mounts is now read with a 500 ms timeout; a stuck mount is
+  skipped instead of blocking every sample after it.
+- **Stopping a benchmark after switching nodes did nothing** — the stop went
+  to the newly selected node. It now goes to the node the run started on, and
+  the Benchmark screen says which node that is when it differs.
+- **A few seconds without Wi-Fi failed a running job** in the app while it
+  kept running on the server. Polling now tolerates 30 seconds of network
+  loss.
+- **Log Analyzer:** searching for text containing `&` or `+` sent a mangled
+  query; errors were shown as "No lines"; after switching nodes the sources
+  of the previous node stayed on screen; clearing the search did not reload;
+  a slow response could overwrite a newer one; and iOS turned a typed `--`
+  into an em-dash, so searching for `--uid=1000` found nothing.
+- **`devices revoke <name>` picked one at random** when two devices shared a
+  name (two "iPhone"s is the default case). It now refuses and asks for the
+  ID; revoking by ID is unchanged.
+- A `#` inside a quoted config value (`display_name = "Pi #2"`) was cut off as
+  a comment. `enroll_window_minutes` or `enroll_max_attempts` set to 0 no
+  longer produce a pairing window that is closed before it opens.
+- `nodestatus-agent update` now works on 32-bit x86, which has release builds.
+- `extras install` allowed 6 minutes for everything, too little for the
+  Geekbench download on a slow Pi; now 30 minutes (20 for the download).
+- The uninstaller now also removes Geekbench (`/opt/nodestatus-agent`),
+  systemd drop-ins and every optional package the installer adds; its help
+  text matched none of that. `INSTALL.md` pointed at the wrong uninstaller path.
+- Error messages from the agent's pairing flow and the app's connection
+  errors are in English (Dutch when the app is set to Dutch); a few were
+  Dutch-only. IPv6 addresses are bracketed in the pairing URL and the node's
+  displayed address.
+- The unit's `Documentation=` link pointed at a repository that doesn't exist.
+- The connection badge said "verbinden" / "herverbinden" in English mode.
+- A failed pairing because of a certificate mismatch now says so, instead of
+  just "cancelled".
+
 ## v0.2.17 — 2026-09-07
 
 ### Fixed

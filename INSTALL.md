@@ -75,7 +75,7 @@ journalctl -u nodestatus-agent -f
 ### Remove
 
 ```bash
-sudo /usr/local/bin/uninstall.sh --purge --remove-extras
+sudo nodestatus-uninstall.sh --purge --remove-extras
 ```
 
 ## 2. Testing

@@ -8,7 +8,8 @@ STATE=/var/lib/nodestatus-agent
 UNIT=/etc/systemd/system/nodestatus-agent.service
 SUDOERS=/etc/sudoers.d/nodestatus-agent
 USER=nodestatus
-PORT=29500
+OPT=/opt/nodestatus-agent
+EXTRA_PKGS="smartmontools whois dnsutils traceroute qrencode lm-sensors iperf3 intel-gpu-tools"
 
 PURGE=0
 REMOVE_EXTRAS=0
@@ -23,9 +24,10 @@ while [ $# -gt 0 ]; do
     --purge) PURGE=1; shift;;
     --remove-extras) REMOVE_EXTRAS=1; shift;;
     -h|--help)
-      echo "usage: sudo ./uninstall.sh [--purge] [--remove-extras]"
-      echo "  --purge          also remove config, CA, paired devices and the user"
-      echo "  --remove-extras  also remove smartmontools, whois, dnsutils, qrencode"
+      echo "usage: sudo nodestatus-uninstall.sh [--purge] [--remove-extras]"
+      echo "  --purge          also remove config, CA, paired devices, sudoers rules and the user"
+      echo "  --remove-extras  also remove Geekbench and the optional packages"
+      echo "                   ($EXTRA_PKGS)"
       exit 0;;
     *) echo "unknown option $1"; exit 2;;
   esac
@@ -37,13 +39,11 @@ echo
 c "1" "Node Status agent — uninstall"
 echo
 
-if [ -f "$ETC/config.toml" ]; then
-  P="$(grep -E '^bind' "$ETC/config.toml" | sed 's/.*://; s/"//g' | tr -d ' ')"
-  [ -n "$P" ] && PORT="$P"
-fi
-
 systemctl disable --now nodestatus-agent >/dev/null 2>&1 && ok "service stopped and disabled" || inf "service was not running"
 [ -f "$UNIT" ] && rm -f "$UNIT" && ok "systemd unit removed"
+# Drop-ins (zoals die voor Geekbench) horen bij deze unit en hebben zonder
+# hem geen betekenis meer.
+[ -d "$UNIT.d" ] && rm -rf "$UNIT.d" && ok "systemd drop-ins removed"
 systemctl daemon-reload >/dev/null 2>&1
 systemctl reset-failed nodestatus-agent >/dev/null 2>&1
 
@@ -68,14 +68,25 @@ else
   [ -d "$ETC" ]   && kept+=("$ETC (config, CA, certificates)")
   [ -d "$STATE" ] && kept+=("$STATE (paired devices)")
   [ -f "$SUDOERS" ] && kept+=("$SUDOERS (sudoers rule for smartctl)")
+  [ -f "${SUDOERS}-gpu" ] && kept+=("${SUDOERS}-gpu (sudoers rule for intel_gpu_top)")
   id -u "$USER" >/dev/null 2>&1 && kept+=("user $USER")
 fi
 
+# iputils-ping staat bewust niet in EXTRA_PKGS: dat levert het systeem-ping
+# en hoort op vrijwel elke machine thuis, ook al zette install.sh het neer.
 if [ "$REMOVE_EXTRAS" -eq 1 ]; then
-  DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq smartmontools whois dnsutils qrencode lm-sensors >/dev/null 2>&1 \
-    && ok "optional packages removed" || inf "optional packages not removed"
+  [ -d "$OPT" ] && rm -rf "$OPT" && ok "Geekbench removed ($OPT)"
+  # Per pakket, net als bij installeren: één pakket dat hier niet bestaat
+  # (intel-gpu-tools op ARM) liet apt-get anders de hele lijst weigeren.
+  removed=0
+  for pkg in $EXTRA_PKGS; do
+    dpkg -s "$pkg" >/dev/null 2>&1 || continue
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq "$pkg" >/dev/null 2>&1 && removed=$((removed+1))
+  done
+  ok "optional packages removed ($removed)"
 else
-  kept+=("optional packages (smartmontools, whois, dnsutils, qrencode, lm-sensors)")
+  [ -d "$OPT" ] && kept+=("$OPT (Geekbench)")
+  kept+=("optional packages ($EXTRA_PKGS, where installed)")
 fi
 
 echo

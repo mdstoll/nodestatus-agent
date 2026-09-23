@@ -1,6 +1,6 @@
 [Unit]
 Description=Node Status agent
-Documentation=https://github.com/merlinstoll/server-info
+Documentation=https://github.com/mdstoll/nodestatus-agent
 After=network-online.target
 Wants=network-online.target
 

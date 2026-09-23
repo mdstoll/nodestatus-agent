@@ -120,10 +120,7 @@ func Load(path string) (*Config, error) {
 			return nil, fmt.Errorf("%s:%d: expected key = value", path, ln)
 		}
 		key := strings.ToLower(strings.TrimSpace(line[:eq]))
-		raw := strings.TrimSpace(line[eq+1:])
-		if i := strings.Index(raw, " #"); i >= 0 { // inline comment
-			raw = strings.TrimSpace(raw[:i])
-		}
+		raw := stripInlineComment(strings.TrimSpace(line[eq+1:]))
 		if err := c.set(section, key, raw); err != nil {
 			return nil, fmt.Errorf("%s:%d: %w", path, ln, err)
 		}
@@ -133,6 +130,26 @@ func Load(path string) (*Config, error) {
 	}
 	c.applyEnv()
 	return c, c.Validate()
+}
+
+// stripInlineComment haalt een "# …" achter de waarde weg, maar alleen buiten
+// aanhalingstekens. Eerder werd op de eerste " #" geknipt, waardoor een
+// display_name als "Pi #2" stilletjes "Pi" werd.
+func stripInlineComment(s string) string {
+	var quote rune
+	for i, r := range s {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			}
+		case r == '"' || r == '\'':
+			quote = r
+		case r == '#' && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t'):
+			return strings.TrimSpace(s[:i])
+		}
+	}
+	return s
 }
 
 func unquote(s string) string { return strings.Trim(s, `"'`) }
@@ -240,9 +257,17 @@ func (c *Config) Validate() error {
 	if c.ClientCertDays < 1 {
 		c.ClientCertDays = 365
 	}
+	// 0 of negatief betekende: een koppelvenster dat al dicht is voordat je
+	// de QR kunt scannen, of één foute poging die het meteen sluit.
+	if c.EnrollWindowMinutes < 1 {
+		c.EnrollWindowMinutes = 15
+	}
+	if c.EnrollMaxAttempts < 1 {
+		c.EnrollMaxAttempts = 5
+	}
 	// Veiligheidsklem: platte HTTP mag alleen op loopback (profiel proxy).
 	if c.TLSCert == "" && !isLoopbackBind(c.Bind) {
-		return fmt.Errorf("tls_cert is leeg maar bind (%s) is niet loopback — weigeren", c.Bind)
+		return fmt.Errorf("tls_cert is empty but bind (%s) is not loopback — refusing to serve plain HTTP", c.Bind)
 	}
 	return nil
 }
