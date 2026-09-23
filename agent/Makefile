@@ -23,6 +23,9 @@ build:
 # Bewust géén darwin/macOS: de hele collectielaag leest /proc en /sys, en
 # macOS heeft geen procfs. Dat compileert wél maar rapporteert niets — zie
 # docs/PLATFORMS.md voor wat een echte macOS-poort zou vragen.
+# Tar zonder macOS-xattrs (com.apple.provenance) en met root als eigenaar:
+# GNU tar op de node gaf anders bij elke uitpak-stap een rij waarschuwingen,
+# ook midden in de output van install.sh.
 release: clean
 	@cp packaging/install.sh ../install.sh
 	@for arch in amd64 386 arm64 arm; do \
@@ -31,7 +34,9 @@ release: clean
 	  GOARM=6 CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -ldflags "$(LDFLAGS)" \
 	    -o $(DIST)/$$arch/nodestatus-agent ./cmd/nodestatus-agent; \
 	  cp packaging/install.sh packaging/uninstall.sh packaging/nodestatus-agent.service $(DIST)/$$arch/; \
-	  tar -czf $(DIST)/nodestatus-agent_linux_$$arch.tar.gz -C $(DIST)/$$arch .; \
+	  COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata --uid 0 --gid 0 \
+	    --uname root --gname root \
+	    -czf $(DIST)/nodestatus-agent_linux_$$arch.tar.gz -C $(DIST)/$$arch .; \
 	done
 	@cd $(DIST) && shasum -a 256 *.tar.gz > SHA256SUMS
 	@ls -lh $(DIST)/*.tar.gz $(DIST)/SHA256SUMS

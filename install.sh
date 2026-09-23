@@ -3,9 +3,10 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/mdstoll/nodestatus-agent/main/install.sh | sudo bash
 #
-# This installs smartmontools, whois, dnsutils, qrencode, lm-sensors and
-# intel-gpu-tools too — the optional packages that unlock the matching tools
-# in the app (SMART, WHOIS, DNS lookup, the pairing QR, sensors, Intel GPU).
+# This installs smartmontools, whois, dnsutils, iputils-ping, traceroute,
+# qrencode, lm-sensors and (on x86) intel-gpu-tools too — the optional
+# packages that unlock the matching tools in the app (SMART, WHOIS, DNS,
+# ping, traceroute, the pairing QR, sensors, Intel GPU).
 # Skip them with --no-modules — note the "-s --", required so bash treats
 # what follows as this script's arguments rather than its own (a bare
 # `| sudo bash --no-modules` fails with bash's own usage text):
@@ -46,9 +47,10 @@ usage: sudo ./install.sh [options]
   --port <n>                    listen port (default: 29500)
   --name <name>                 display name shown in the app
   --vpn-ip <ip>                 with --mode vpn: address to bind to
-  --no-modules                  skip smartmontools, whois, dnsutils, qrencode,
-                                lm-sensors and intel-gpu-tools (installed
-                                by default — see --help above)
+  --no-modules                  skip the optional packages (smartmontools,
+                                whois, dnsutils, iputils-ping, traceroute,
+                                qrencode, lm-sensors, intel-gpu-tools),
+                                which are installed by default
   --version <tag>               release to install (default: latest)
   --yes                         do not ask anything
 USAGE
@@ -125,13 +127,14 @@ if [ -z "$SRC_BIN" ]; then
   inf "downloading $TARBALL"
   curl -fsSL -o "$TMP/$TARBALL" "$BASEURL/$TARBALL" \
     || die "download failed — check https://github.com/$REPO/releases"
-  if curl -fsSL -o "$TMP/SHA256SUMS" "$BASEURL/SHA256SUMS" 2>/dev/null; then
-    ( cd "$TMP" && grep " $TARBALL\$" SHA256SUMS | sha256sum -c --status - ) \
-      || die "checksum mismatch — refusing to install"
-    ok "checksum verified"
-  else
-    warn "no SHA256SUMS published; skipping checksum verification"
-  fi
+  # Zonder SHA256SUMS niet installeren: een ontbrekende checksum en een
+  # vervalste zijn van hieruit niet te onderscheiden. Elke release publiceert
+  # er een (make release), en `nodestatus-agent update` weigert net zo.
+  curl -fsSL -o "$TMP/SHA256SUMS" "$BASEURL/SHA256SUMS" \
+    || die "this release has no SHA256SUMS — refusing to install an unverified binary"
+  ( cd "$TMP" && grep " $TARBALL\$" SHA256SUMS | sha256sum -c --status - ) \
+    || die "checksum mismatch — refusing to install"
+  ok "checksum verified"
   tar xzf "$TMP/$TARBALL" -C "$TMP"
   SRC_BIN="$TMP/nodestatus-agent"
   UNIT_SRC="$TMP/nodestatus-agent.service"
@@ -326,6 +329,17 @@ ok "CA and server certificate created"
 
 # ---------- 10. systemd ----------
 [ -f "$UNIT_SRC" ] || die "nodestatus-agent.service not found next to the binary"
+# De unit wordt altijd vervangen, dus wie MemoryDenyWriteExecute er vroeger
+# (op ons eigen advies) met sed uit haalde voor Geekbench, zou die keuze hier
+# stilletjes kwijtraken. Die keuze dus eerst omzetten naar een drop-in — die
+# overleeft deze en elke volgende herinstallatie.
+DROPIN_DIR="$UNIT.d"
+if [ -f "$UNIT" ] && ! grep -q '^MemoryDenyWriteExecute=' "$UNIT" \
+   && ! grep -qs '^MemoryDenyWriteExecute=' "$DROPIN_DIR"/*.conf; then
+  mkdir -p "$DROPIN_DIR"
+  printf '[Service]\nMemoryDenyWriteExecute=no\n' > "$DROPIN_DIR/geekbench.conf"
+  inf "kept MemoryDenyWriteExecute off for Geekbench (now in $DROPIN_DIR/geekbench.conf)"
+fi
 install -m 0644 "$UNIT_SRC" "$UNIT"
 systemctl daemon-reload
 systemctl enable --quiet nodestatus-agent
