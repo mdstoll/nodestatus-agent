@@ -209,7 +209,7 @@ case "$MODE" in
     if [ -n "$CIDR" ] && is_private_ip "$PRIMARY_IP"; then
       ALLOW="[\"$CIDR\"]"
     elif [ -n "$CIDR" ]; then
-      warn "primary address $PRIMARY_IP is public, not a private LAN — skipping the subnet restriction"
+      warn "primary subnet $CIDR is public, not a private LAN — skipping the subnet restriction"
       warn "(mode lan would otherwise lock every real client out; mTLS is what actually protects this agent)"
       warn "for a public server this is the same as --mode public; pass it explicitly to silence this warning"
     fi
@@ -325,7 +325,7 @@ BOOTSTRAP_OUT="$(su -s /bin/sh "$USER" -c "$BIN bootstrap --config $ETC/config.t
 FP="$(printf '%s' "$BOOTSTRAP_OUT" | awk '/CA-fingerprint/{print $2}')"
 [ -n "$FP" ] || die "could not create the CA: $(printf '%s' "$BOOTSTRAP_OUT" | tail -2 | tr '\n' ' ')"
 chown -R "$USER:$USER" "$ETC"
-ok "CA and server certificate created"
+ok "CA and server certificate ready"
 
 # ---------- 10. systemd ----------
 [ -f "$UNIT_SRC" ] || die "nodestatus-agent.service not found next to the binary"
