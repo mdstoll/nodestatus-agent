@@ -6,9 +6,27 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.19 — 2026-10-13
+
+### Security
+- **Built with Go 1.26.9**, which fixes nine standard-library vulnerabilities
+  that `govulncheck` shows the agent actually reaches: HTTP/2 server crashes
+  and memory exhaustion, HTTP/1 connection desynchronisation and an
+  unbounded MIME-header parse in `net/http` / `net/textproto`, and a
+  `crypto/tls` parsing fix. 0.2.18 was built with 1.26.7. In practice only
+  paired devices (or a client during an open pairing window) get past the
+  TLS handshake to reach the HTTP layer, but a public node is still exposed
+  to the handshake itself.
+- The Go toolchain is now pinned in `go.mod`, and `make release` refuses to
+  build when `govulncheck` finds a reachable vulnerability — a release no
+  longer depends on whichever Go happens to be installed.
+
 ### Fixed
 - A failed `nodestatus-agent update` (for example on a full disk) left an
   empty `nodestatus-agent.new` behind in `/usr/local/bin`.
+- `install.sh` named the subnet address as the "primary address" in its
+  public-network warning, and said the CA was "created" when an existing one
+  was kept.
 
 ## v0.2.18 / App v0.2.10 — 2026-09-23
 

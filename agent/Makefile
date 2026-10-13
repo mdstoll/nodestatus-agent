@@ -1,8 +1,8 @@
-VERSION ?= 0.2.18
+VERSION ?= 0.2.19
 LDFLAGS := -s -w -X main.version=$(VERSION)
 DIST    := dist
 
-.PHONY: all build release clean deploy test
+.PHONY: all build release clean deploy test vulncheck
 
 all: build
 
@@ -26,7 +26,7 @@ build:
 # Tar zonder macOS-xattrs (com.apple.provenance) en met root als eigenaar:
 # GNU tar op de node gaf anders bij elke uitpak-stap een rij waarschuwingen,
 # ook midden in de output van install.sh.
-release: clean
+release: clean vulncheck
 	@cp packaging/install.sh ../install.sh
 	@for arch in amd64 386 arm64 arm; do \
 	  echo "→ linux/$$arch"; \
@@ -47,3 +47,9 @@ test:
 
 clean:
 	rm -rf $(DIST)
+
+# Faalt als onze code een bekende kwetsbaarheid in Go of de stdlib aanroept.
+# Hangt aan release, zodat een verouderde toolchain niet ongemerkt een
+# nieuwe versie in kan.
+vulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
