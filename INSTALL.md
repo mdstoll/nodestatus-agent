@@ -22,7 +22,9 @@ Produces `agent/dist/`:
 | `nodestatus-agent_linux_386.tar.gz` | ~3.2 MB |
 | `SHA256SUMS` | — |
 
-Needs Go 1.24+ (`brew install go`) and nothing else.
+Needs Go 1.24+ (`brew install go`) and nothing else. The exact toolchain releases are built
+with is pinned in `agent/go.mod`; `go` downloads it automatically, and `make release` runs
+`govulncheck` first and stops if it finds a reachable vulnerability.
 
 ### Install on a server
 
