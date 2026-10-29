@@ -8,6 +8,15 @@ this yourself.
 
 ## v0.2.20 / App v0.2.11 — 2026-10-29
 
+### Security
+- **Built with Go 1.26.10**, which distrusts a set of compromised
+  intermediate certificates in `crypto/x509`
+  ([GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)). The agent verifies
+  certificates against the system roots for `nodestatus-agent update`, the
+  Geekbench download and the speed test. Caught by the `govulncheck` gate
+  that `make release` gained in 0.2.19 — it refused to build until the
+  toolchain was bumped.
+
 ### Added
 - **The app now has a real iPad layout.** Still one universal app and one
   codebase — the layout follows the available width, so iPhone and iPad
