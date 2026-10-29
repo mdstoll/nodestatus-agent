@@ -1,6 +1,8 @@
 package store
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -43,5 +45,28 @@ func TestLookupReturnsCopy(t *testing.T) {
 	d.Name = "changed"
 	if d2, _ := s.Lookup("fp"); d2.Name != "x" {
 		t.Error("Lookup leaked the stored pointer")
+	}
+}
+
+func TestAddRollsBackWhenSaveFails(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Schrijven onmogelijk maken, zoals een volle schijf.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o700)
+
+	if _, _, err := s.Add("iPad", "fp-x", time.Now().Add(time.Hour)); err == nil {
+		t.Skip("schrijven lukte toch (draait als root?)")
+	}
+	if _, ok := s.Lookup("fp-x"); ok {
+		t.Error("device whose save failed is still in the allowlist")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "devices.json.tmp")); err == nil {
+		t.Error("partial devices.json.tmp left behind")
 	}
 }

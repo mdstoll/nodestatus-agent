@@ -6,6 +6,48 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.20 / App v0.2.11 — 2026-10-29
+
+### Added
+- **The app now has a real iPad layout.** Still one universal app and one
+  codebase — the layout follows the available width, so iPhone and iPad
+  cannot drift apart:
+  - a **sidebar** (`TabView` with `.sidebarAdaptable`) with a fleet summary
+    and every node one tap away, its status in the icon; customizable via
+    Edit, as everywhere on iPadOS
+  - a **fleet overview** on the Node tab: summary tiles and a grid of node
+    cards with a status pill, specs (cores, memory, disk), CPU / memory /
+    disk meters that only turn orange or red past a threshold, a CPU
+    sparkline, uptime and load
+  - **Metrics in two columns**, **Tools as a grid of tiles**, Settings and
+    every detail screen centred at a readable width
+  - all orientations, Split View and Stage Manager (the app was portrait-only)
+  - a **Node menu** in the iPadOS menu bar, with keyboard shortcuts:
+    ⌘N pair a node, ⌘] / ⌘[ next/previous node, ⌘R reconnect
+  - pointer hover effects and context menus on the cards
+- `deploy.sh` installs on every paired iPhone **and** iPad (or one kind:
+  `./deploy.sh ipad`) and renews an expired free-account profile by itself.
+
+### Changed
+- Per-node live data (the 5-second poll behind the node cards) moved from
+  each card into `AppState`, so the iPhone list, the iPad sidebar and the
+  fleet grid share one poll and always show the same numbers.
+- Pairing via a link or ⌘N is presented from the app root, from any tab.
+- Camera and local-network permission prompts are in English, with Dutch
+  for Dutch devices (they were Dutch-only).
+
+### Fixed
+- **Agent:** when saving a newly paired device failed (seen on a full disk),
+  the device stayed in the agent's allowlist and `devices list` until the
+  next restart, although the app had received an error and no certificate.
+  It is now rolled back, as is a failed certificate renewal, and no empty
+  `devices.json.tmp` is left behind.
+- The pulsing status dot drifted: its repeat-forever animation also animated
+  the dot's first layout, so it floated between the corner and its place.
+- A pairing link that iOS delivered twice (cold start, then again after
+  "Open in Node Status?") reported "pairing failed" over a pairing that had
+  just succeeded.
+
 ## v0.2.19 — 2026-10-13
 
 ### Security

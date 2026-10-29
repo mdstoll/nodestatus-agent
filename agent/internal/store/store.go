@@ -77,9 +77,15 @@ func (s *Store) save() error {
 	}
 	tmp := s.path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		// Op een volle schijf bleef hier een leeg devices.json.tmp staan.
+		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	if err := os.Rename(tmp, s.path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func (s *Store) Count() int {
@@ -149,6 +155,12 @@ func (s *Store) Add(name, fingerprint string, expires time.Time) (*Device, strin
 	s.mu.Lock()
 	s.devices[fingerprint] = d
 	err = s.save()
+	if err != nil {
+		// Terugdraaien: het apparaat krijgt zijn certificaat nooit (de
+		// enroll-handler geeft een fout terug), maar stond tot de volgende
+		// herstart wél in de allowlist en in `devices list`.
+		delete(s.devices, fingerprint)
+	}
 	s.mu.Unlock()
 	if err != nil {
 		return nil, "", err
@@ -164,11 +176,19 @@ func (s *Store) Replace(oldFP, newFP string, expires time.Time) (*Device, error)
 	if !ok {
 		return nil, fmt.Errorf("unknown device")
 	}
+	old := *d
 	delete(s.devices, oldFP)
 	d.Fingerprint = newFP
 	d.ExpiresAt = expires
 	s.devices[newFP] = d
-	return d, s.save()
+	if err := s.save(); err != nil {
+		// Zelfde reden als in Add: het oude certificaat blijft dan geldig.
+		delete(s.devices, newFP)
+		*d = old
+		s.devices[oldFP] = d
+		return nil, err
+	}
+	return d, nil
 }
 
 // Revoke trekt een apparaat in op ID, of op naam als die uniek is. Eerder won
