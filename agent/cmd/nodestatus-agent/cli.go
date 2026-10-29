@@ -17,6 +17,7 @@ import (
 	"nodestatus/internal/control"
 	"nodestatus/internal/pki"
 	"nodestatus/internal/selfupdate"
+	"nodestatus/internal/store"
 	"nodestatus/internal/tools"
 )
 
@@ -54,6 +55,14 @@ func cmdEnroll() {
 	var info control.EnrollInfo
 	b, _ := json.Marshal(resp.Data)
 	_ = json.Unmarshal(b, &info)
+
+	// Meteen zeggen, niet pas als de app na het scannen een fout krijgt: de
+	// agent moet het nieuwe apparaat wegschrijven, en op een volle schijf
+	// lukt dat niet. 1 MB is ruim genoeg voor devices.json.
+	if free, ok := store.FreeBytes(stateDir()); ok && free < 1<<20 {
+		fmt.Fprintf(os.Stderr, "\n  \033[0;33m!\033[0m The disk holding %s is full (%d KB free).\n", stateDir(), free>>10)
+		fmt.Fprintln(os.Stderr, "    Pairing will fail until there is space: the agent cannot save the new device.")
+	}
 
 	p := *port
 	if p == 0 {

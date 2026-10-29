@@ -367,6 +367,15 @@ if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "^Status: activ
   esac
 fi
 
+# Een publieke server zit vaak ook achter een firewall van de hoster (Contabo,
+# Hetzner Cloud, AWS security groups), los van ufw hier. Die laat dan alleen
+# 22/80/443 door; de agent draait prima maar is van buiten onbereikbaar
+# ("No route to host"), en dat is op de server zelf niet te zien.
+if [ -n "${PRIMARY_IP:-}" ] && ! is_private_ip "$PRIMARY_IP" || [ "$MODE" = public ]; then
+  warn "public server: also allow TCP $PORT in your hosting provider's firewall, if it has one"
+  warn "(the agent cannot see that firewall; from outside, a blocked port shows as \"No route to host\")"
+fi
+
 # ---------- 12. self-test ----------
 if [ -n "$TLS_CERT" ]; then
   HEALTH="$(curl -sk --max-time 5 "https://127.0.0.1:$PORT/v1/health" || true)"

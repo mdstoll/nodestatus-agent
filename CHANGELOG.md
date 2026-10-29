@@ -6,6 +6,23 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.21 — 2026-10-29
+
+### Fixed
+- **Pairing on a node with a full disk said only "could not store the
+  device"**, and the agent logged nothing — on the server there was no trace
+  of a failed pairing, and from the app it looked like a problem with
+  connecting to a public address. The app now reads "the node's disk is full,
+  so the new device cannot be saved. Free up space on the node and try
+  again", the journal gets an error line, and certificate renewal reports the
+  same way.
+- `nodestatus-agent enroll --new` warns up front when the disk holding the
+  agent's state is full, before anyone scans the QR code.
+- `install.sh` points out, on a public server, that the hosting provider's
+  firewall (Contabo, Hetzner Cloud, AWS security groups) must also allow the
+  agent's port. The agent cannot see that firewall, and from outside a blocked
+  port only shows up as "No route to host".
+
 ## v0.2.20 / App v0.2.11 — 2026-10-29
 
 ### Security

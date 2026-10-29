@@ -106,7 +106,10 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	dev, token, err := s.store.Add(name, fp, notAfter)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", "could not store the device")
+		// Loggen: eerder gaf de app een foutmelding en bleef het journal leeg,
+		// waardoor op de server niets te zien was van een mislukte koppeling.
+		s.log.Error("could not save the paired device", "device", name, "err", err)
+		writeErr(w, http.StatusInternalServerError, "storage", storeFailure(err, "the new device"))
 		return
 	}
 	s.store.CloseEnrollment()
@@ -175,7 +178,8 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.store.Replace(me.Fingerprint, fp, notAfter); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		s.log.Error("could not save the renewed certificate", "device", me.Name, "err", err)
+		writeErr(w, http.StatusInternalServerError, "storage", storeFailure(err, "the renewed certificate"))
 		return
 	}
 	writeJSON(w, map[string]any{
@@ -337,3 +341,14 @@ func (s *Server) handleJobCancel(w http.ResponseWriter, r *http.Request) {
 }
 
 var _ = fmt.Sprintf
+
+// storeFailure is de melding die de app toont als devices.json niet weg te
+// schrijven is. Bij een volle schijf zeggen we dat letterlijk: "could not
+// store the device" liet de gebruiker raden, en het leek op een
+// verbindingsprobleem met een publiek adres.
+func storeFailure(err error, what string) string {
+	if store.IsDiskFull(err) {
+		return "the node's disk is full, so " + what + " cannot be saved. Free up space on the node and try again."
+	}
+	return "could not save " + what + " on the node"
+}
