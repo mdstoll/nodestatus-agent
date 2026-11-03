@@ -13,9 +13,19 @@ func TestActiveZones(t *testing.T) {
 }
 
 func TestZoneAllowsPort(t *testing.T) {
-	closed := "public (active)\n  target: default\n  services: ssh http https\n  ports: 8090/tcp 295000/tcp\n  rich rules:\n"
+	// Zo ziet b.mest.dev eruit: geen 29500, wel een bereik en fail2ban-regels.
+	closed := `public
+  target: default
+  services: dhcpv6-client ftp http https ssh
+  ports: 2222/tcp 35000-35999/tcp 295000/tcp 29500/udp
+  rich rules:
+	rule family="ipv4" source address="80.68.76.181" port port="0-65535" protocol="tcp" reject type="icmp-port-unreachable"
+`
 	if zoneAllowsPort(closed, 29500) {
-		t.Error("port not listed, must not count as allowed")
+		t.Error("port not listed: must not count as allowed")
+	}
+	if !zoneAllowsPort(closed, 35100) {
+		t.Error("port inside an open range must count as allowed")
 	}
 	cases := map[string]string{
 		"port":      "  ports: 80/tcp 29500/tcp\n",

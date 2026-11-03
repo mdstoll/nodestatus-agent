@@ -16,8 +16,8 @@ import (
 //
 // De reden dat dit bestaat: de agent luistert dan gewoon, de zelftest op
 // 127.0.0.1 slaagt, en van buiten is alleen "No route to host" te zien. Op
-// b.mest.dev (CyberPanel, dus firewalld) leek dat wekenlang op een firewall bij
-// de hoster, terwijl de server zelf de verbindingen weigerde.
+// b.mest.dev leek dat wekenlang op een firewall bij de hoster, terwijl firewalld
+// op de server zelf de verbindingen weigerde.
 func firewallBlock(port int) (name, fix string) {
 	if out, ok := runCheck("firewall-cmd", "--state"); ok && strings.TrimSpace(out) == "running" {
 		if firewalldAllows(port) {
@@ -42,14 +42,24 @@ func runCheck(name string, args ...string) (string, bool) {
 }
 
 // firewalldAllows bekijkt alle actieve zones: de interface hoeft niet in de
-// standaardzone te zitten. Lukt het opvragen niet, dan geen alarm.
+// standaardzone te zitten. Staat er geen enkele interface expliciet in een zone,
+// dan is --get-active-zones leeg en geldt de standaardzone; zonder die terugval
+// bleef een net geopende poort als geblokkeerd gemeld. Lukt het opvragen niet,
+// dan geen alarm.
 func firewalldAllows(port int) bool {
 	zones, ok := runCheck("firewall-cmd", "--get-active-zones")
 	if !ok {
 		return true
 	}
+	args := [][]string{}
 	for _, zone := range activeZones(zones) {
-		out, ok := runCheck("firewall-cmd", "--zone="+zone, "--list-all")
+		args = append(args, []string{"--zone=" + zone, "--list-all"})
+	}
+	if len(args) == 0 {
+		args = append(args, []string{"--list-all"})
+	}
+	for _, a := range args {
+		out, ok := runCheck("firewall-cmd", a...)
 		if !ok || zoneAllowsPort(out, port) {
 			return true
 		}
@@ -73,16 +83,39 @@ func activeZones(out string) []string {
 }
 
 func zoneAllowsPort(listAll string, port int) bool {
-	p := fmt.Sprint(port)
 	if strings.Contains(listAll, "target: ACCEPT") {
 		return true
 	}
-	for _, f := range strings.Fields(listAll) {
-		if f == p+"/tcp" || f == `port="`+p+`"` {
-			return true
+	sc := bufio.NewScanner(strings.NewReader(listAll))
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		switch {
+		case strings.HasPrefix(line, "ports:"):
+			for _, f := range strings.Fields(strings.TrimPrefix(line, "ports:")) {
+				if spec, ok := strings.CutSuffix(f, "/tcp"); ok && specHasPort(spec, port) {
+					return true
+				}
+			}
+		// Alleen accept-regels: fail2ban zet hier ook honderden regels met
+		// port="0-65535" ... reject neer, en die openen niets.
+		case strings.HasPrefix(line, "rule ") && strings.HasSuffix(line, " accept"):
+			for _, f := range strings.Fields(line) {
+				if v, ok := strings.CutPrefix(f, `port="`); ok && specHasPort(strings.TrimSuffix(v, `"`), port) {
+					return true
+				}
+			}
 		}
 	}
 	return false
+}
+
+// specHasPort leest "29500" of een bereik "35000-35999".
+func specHasPort(spec string, port int) bool {
+	var lo, hi int
+	if n, _ := fmt.Sscanf(spec, "%d-%d", &lo, &hi); n == 2 {
+		return lo <= port && port <= hi
+	}
+	return spec == fmt.Sprint(port)
 }
 
 func ufwBlocks(status string, port int) bool {

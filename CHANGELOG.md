@@ -6,6 +6,15 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.23 — 2026-11-04
+
+### Fixed
+- The firewall check added in 0.2.22 kept reporting a port as blocked after it
+  had been opened, on servers where no interface is explicitly assigned to a
+  firewalld zone (the default zone applies there). It also did not recognise an
+  open port range. `doctor` and `enroll --new` now read the default zone in that
+  case and understand ranges.
+
 ## v0.2.22 — 2026-11-04
 
 ### Fixed
