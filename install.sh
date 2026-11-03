@@ -367,13 +367,32 @@ if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "^Status: activ
   esac
 fi
 
-# Een publieke server zit vaak ook achter een firewall van de hoster (Contabo,
-# Hetzner Cloud, AWS security groups), los van ufw hier. Die laat dan alleen
-# 22/80/443 door; de agent draait prima maar is van buiten onbereikbaar
-# ("No route to host"), en dat is op de server zelf niet te zien.
+# firewalld is wat CyberPanel, RHEL en Fedora gebruiken. Zonder deze regel
+# draaide de agent, slaagde de zelftest hieronder (die gaat via 127.0.0.1), en
+# was hij van buiten toch onbereikbaar met "No route to host".
+if command -v firewall-cmd >/dev/null && firewall-cmd --state >/dev/null 2>&1; then
+  fw_allow_port() {
+    firewall-cmd --permanent --add-port="$PORT"/tcp >/dev/null && firewall-cmd --reload >/dev/null
+  }
+  case "$MODE" in
+    lan)
+      if [ "$ALLOW" != "[]" ]; then
+        firewall-cmd --permanent --add-rich-rule="rule family=\"ipv4\" source address=\"$CIDR\" port port=\"$PORT\" protocol=\"tcp\" accept" >/dev/null \
+          && firewall-cmd --reload >/dev/null && ok "firewalld: allowed from $CIDR"
+      else
+        fw_allow_port && ok "firewalld: port $PORT open (public address, see warning above)"
+      fi
+      ;;
+    public) fw_allow_port && ok "firewalld: port $PORT open";;
+    vpn)    inf "firewalld: no rule added (agent binds the VPN address only)";;
+    proxy)  inf "firewalld: no rule needed (agent binds loopback)";;
+  esac
+fi
+
+# Een firewall bij de hoster (Hetzner Cloud, AWS security groups) staat hier los
+# van en is van binnenuit niet te zien.
 if [ -n "${PRIMARY_IP:-}" ] && ! is_private_ip "$PRIMARY_IP" || [ "$MODE" = public ]; then
-  warn "public server: also allow TCP $PORT in your hosting provider's firewall, if it has one"
-  warn "(the agent cannot see that firewall; from outside, a blocked port shows as \"No route to host\")"
+  inf "public server: if the app cannot connect, check your hosting provider's firewall for TCP $PORT too"
 fi
 
 # ---------- 12. self-test ----------

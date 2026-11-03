@@ -75,6 +75,7 @@ func cmdEnroll() {
 			p = 29500
 		}
 	}
+	printFirewallWarning(p)
 	host := info.Hostname
 	if len(info.Addresses) > 0 {
 		host = info.Addresses[0]
@@ -441,8 +442,12 @@ func cmdDoctor() {
 	cfgPath := fs.String("config", defaultConfigPath(), "path to config.toml")
 	fs.Parse(os.Args[1:])
 
+	port := 29500
 	if cfg, err := config.Load(*cfgPath); err == nil {
 		tools.SetHome(cfg.StateDir)
+		if _, portStr, ok := strings.Cut(cfg.Bind, ":"); ok {
+			fmt.Sscanf(portStr, "%d", &port)
+		}
 	}
 	tools.Discover()
 
@@ -487,5 +492,7 @@ func cmdDoctor() {
 	} else {
 		fmt.Printf("  %d module(s) unavailable — the app hides these.\n", missing)
 	}
-	fmt.Println()
+	if !printFirewallWarning(port) {
+		fmt.Println()
+	}
 }

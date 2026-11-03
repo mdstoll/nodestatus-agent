@@ -58,6 +58,23 @@ if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Node Status"; 
   ok "ufw rules removed"
 fi
 
+# Poort uit de config, dus vóór die eventueel verdwijnt hieronder.
+PORT=29500
+if [ -f "$ETC/config.toml" ]; then
+  P="$(grep -E '^bind' "$ETC/config.toml" | sed 's/.*://; s/"//g' | tr -d ' ')"
+  [ -n "$P" ] && PORT="$P"
+fi
+if command -v firewall-cmd >/dev/null && firewall-cmd --state >/dev/null 2>&1; then
+  fw_changed=0
+  if firewall-cmd --permanent --query-port="$PORT"/tcp >/dev/null 2>&1; then
+    firewall-cmd --permanent --remove-port="$PORT"/tcp >/dev/null 2>&1 && fw_changed=1
+  fi
+  while IFS= read -r rule; do
+    [ -n "$rule" ] && firewall-cmd --permanent --remove-rich-rule="$rule" >/dev/null 2>&1 && fw_changed=1
+  done <<<"$(firewall-cmd --permanent --list-rich-rules 2>/dev/null | grep "port=\"$PORT\"")"
+  [ "$fw_changed" -eq 1 ] && firewall-cmd --reload >/dev/null 2>&1 && ok "firewalld rules removed"
+fi
+
 if [ "$PURGE" -eq 1 ]; then
   [ -d "$ETC" ]   && rm -rf "$ETC"   && ok "config, CA and certificates removed"
   [ -d "$STATE" ] && rm -rf "$STATE" && ok "paired devices removed"

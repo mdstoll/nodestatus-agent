@@ -6,6 +6,24 @@ this yourself.
 
 ## [Unreleased]
 
+## v0.2.22 — 2026-11-04
+
+### Fixed
+- **The installer ignored firewalld.** It only added a rule for `ufw`, so on a
+  server using firewalld (CyberPanel, RHEL, Fedora) the agent ran, its self-test
+  passed over 127.0.0.1, and every connection from outside was refused with "No
+  route to host". `install.sh` now opens the port in firewalld (scoped to the
+  subnet in `lan` mode) and the uninstaller removes it again.
+- `nodestatus-agent enroll --new` and `doctor` now check whether firewalld or
+  ufw on the machine blocks the agent's port, and print the command that
+  allows it — before anyone scans a QR code that cannot work.
+
+### Corrected
+- The 0.2.21 installer hint blamed "No route to host" on the hosting provider's
+  firewall. That was a wrong diagnosis: the node it came from was rejecting the
+  connections itself, through firewalld. The hint now only suggests checking
+  the provider's firewall as a further step.
+
 ## v0.2.21 — 2026-10-29
 
 ### Fixed

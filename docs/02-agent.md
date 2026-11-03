@@ -167,6 +167,11 @@ sudo nodestatus-uninstall.sh --purge --remove-extras  # leave nothing behind
 
 The uninstaller always prints what it did **not** remove, so nothing lingers silently.
 
+If the app cannot connect while the agent is running, `nodestatus-agent doctor` checks whether
+firewalld or ufw on the machine blocks the port and prints the command that allows it. A port
+blocked that way shows from outside as "No route to host". The installer opens the port in
+both; a firewall at your hosting provider is separate and cannot be seen from the server.
+
 ## 2.6.1 Optional extras, after the fact
 
 `iperf3` and Geekbench are not part of the installer's package step: the first is only
